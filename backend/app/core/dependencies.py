@@ -56,7 +56,7 @@ def require_platform_permission(permission_code: str):
         pool = get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("""SELECT 1 FROM platform_user_roles ur JOIN platform_role_permissions rp ON rp.platform_role_id=ur.platform_role_id JOIN platform_permissions p ON p.id=rp.platform_permission_id WHERE ur.platform_user_id=%s AND p.code=%s LIMIT 1""", (str(principal.user_id), permission_code))
+                await cur.execute("SELECT 1 FROM platform_user_roles ur JOIN platform_role_permissions rp ON rp.platform_role_id=ur.platform_role_id JOIN platform_permissions p ON p.id=rp.platform_permission_id WHERE ur.platform_user_id=%s AND p.code=%s LIMIT 1", (str(principal.user_id), permission_code))
                 if not await cur.fetchone():
                     raise HTTPException(status_code=403, detail="Insufficient platform permission")
         return principal
@@ -66,16 +66,10 @@ async def get_tenant_id_from_host(request: Request) -> UUID:
     hostname = (request.url.hostname or "").lower().rstrip(".")
     if hostname in {"localhost", "127.0.0.1", settings.platform_admin_host, "admin.localhost"}:
         raise HTTPException(status_code=400, detail="Tenant hostname is required")
-    suffix = ".localhost" if hostname.endswith(".localhost") else "." + settings.root_domain
-    if not hostname.endswith(suffix):
-        raise HTTPException(status_code=400, detail="Unrecognized tenant hostname")
-    slug = hostname[: -len(suffix)]
-    if not slug or "." in slug:
-        raise HTTPException(status_code=400, detail="Invalid tenant hostname")
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("SELECT id,status FROM tenants WHERE slug=%s LIMIT 1", (slug,))
+            await cur.execute("SELECT t.id,t.status FROM tenant_domains d JOIN tenants t ON t.id=d.tenant_id WHERE d.hostname=%s LIMIT 1", (hostname,))
             row = await cur.fetchone()
     if not row or row[1] != "active":
         raise HTTPException(status_code=404, detail="School tenant not found")

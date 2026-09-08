@@ -29,7 +29,7 @@ async def login_user(email: str, password: str, user_type: str, tenant_id: UUID 
             await cur.execute("INSERT INTO auth_sessions (id,user_type,user_id,tenant_id,refresh_token_hash,expires_at,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)", (str(session_id),user_type,str(user[0]),str(tenant_id) if tenant_id else None,refresh_hash,refresh_expires.replace(tzinfo=None),now))
             access, access_expires = create_access_token(user_id=str(user[0]),user_type=user_type,tenant_id=str(tenant_id) if tenant_id else None,session_id=str(session_id))
             await cur.execute(f"UPDATE {table} SET last_login_at=%s WHERE id=%s", (now,str(user[0])))
-            await cur.execute("INSERT INTO identity_audit_log (actor_type,actor_id,tenant_id,action,target_type,target_id) VALUES (%s,%s,%s,'auth.login',%s,%s)", (user_type,str(user[0]),str(tenant_id) if tenant_id else None,user_type,user[0]))
+            await cur.execute("INSERT INTO identity_audit_log (actor_type,actor_id,tenant_id,action,target_type,target_id) VALUES (%s,%s,%s,'auth.login',%s,%s)", (user_type,str(user[0]),str(tenant_id) if tenant_id else None,user_type,str(user[0])))
             return access, refresh_raw, access_expires
 
 async def refresh_session(refresh_token: str):
@@ -37,19 +37,24 @@ async def refresh_session(refresh_token: str):
     token_hash = hash_token(refresh_token)
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("SELECT id,user_type,user_id,tenant_id,expires_at,revoked_at FROM auth_sessions WHERE refresh_token_hash=%s LIMIT 1", (token_hash,))
+            await cur.execute("SELECT id,user_type,user_id,tenant_id,tenant_access_session_id,expires_at,revoked_at FROM auth_sessions WHERE refresh_token_hash=%s LIMIT 1", (token_hash,))
             session = await cur.fetchone()
             now = datetime.now(timezone.utc).replace(tzinfo=None)
-            if not session or session[5] is not None or session[4] <= now:
+            if not session or session[6] is not None or session[5] <= now:
                 raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
             table = "platform_users" if session[1] == "platform" else "tenant_users"
             await cur.execute(f"SELECT status FROM {table} WHERE id=%s", (str(session[2]),))
             user = await cur.fetchone()
             if not user or user[0] != "active":
                 raise HTTPException(status_code=401, detail="User account is not active")
+            if session[4]:
+                await cur.execute("SELECT expires_at,revoked_at FROM tenant_access_sessions WHERE id=%s", (str(session[4]),))
+                access_session = await cur.fetchone()
+                if not access_session or access_session[1] is not None or access_session[0] <= now:
+                    raise HTTPException(status_code=401, detail="Tenant access session is no longer active")
             new_raw, new_hash, new_expires = create_refresh_token()
             await cur.execute("UPDATE auth_sessions SET refresh_token_hash=%s,expires_at=%s,last_used_at=%s WHERE id=%s", (new_hash,new_expires.replace(tzinfo=None),now,str(session[0])))
-            access, access_expires = create_access_token(user_id=str(session[2]),user_type=session[1],tenant_id=str(session[3]) if session[3] else None,session_id=str(session[0]))
+            access, access_expires = create_access_token(user_id=str(session[2]),user_type=session[1],tenant_id=str(session[3]) if session[3] else None,session_id=str(session[0]),access_session_id=str(session[4]) if session[4] else None)
             return access,new_raw,access_expires
 
 async def logout_session(refresh_token: str | None, session_id: UUID | None):
