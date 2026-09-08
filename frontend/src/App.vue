@@ -7,11 +7,22 @@ const auth = useAuthStore(); const route = useRoute(); const router = useRouter(
 const isPlatformHost = computed(() => ["admin.localhost","admin.shulelink.co.ke","localhost","127.0.0.1"].includes(window.location.hostname));
 const tenantLabel = computed(() => window.location.hostname.split(".")[0]);
 const isAuthenticatedPage = computed(() => auth.isAuthenticated && !["login","home"].includes(route.name));
-const tenantNavigation = [
- {label:"Dashboard",icon:"bi-grid-1x2",to:"/school"},{label:"School Structure",icon:"bi-diagram-3",to:"/school/structure"},{label:"Students",icon:"bi-people",to:"/school/students"},{label:"Guardians",icon:"bi-person-hearts",to:"/school/guardians"},{label:"Academics",icon:"bi-mortarboard",comingSoon:true},{label:"Attendance",icon:"bi-calendar-check",comingSoon:true},{label:"Examinations",icon:"bi-journal-check",comingSoon:true},{label:"Fees & Payments",icon:"bi-wallet2",comingSoon:true},{label:"Communication",icon:"bi-chat-square-text",comingSoon:true},{label:"Reports",icon:"bi-bar-chart",comingSoon:true},
-];
+const can = (permission) => auth.user?.permissions?.includes(permission);
+const tenantNavigation = computed(() => [
+ {label:"Dashboard",icon:"bi-grid-1x2",to:"/school"},
+ {label:"School Structure",icon:"bi-diagram-3",to:"/school/structure",permission:"school.structure.read"},
+ {label:"Students",icon:"bi-people",to:"/school/students",permission:"students.read"},
+ {label:"Guardians",icon:"bi-person-hearts",to:"/school/guardians",permission:"students.read"},
+ {label:"Portal Accounts",icon:"bi-person-badge",to:"/school/portal-accounts",permission:"accounts.manage"},
+ {label:"Academics",icon:"bi-mortarboard",comingSoon:true},
+ {label:"Attendance",icon:"bi-calendar-check",comingSoon:true},
+ {label:"Examinations",icon:"bi-journal-check",comingSoon:true},
+ {label:"Fees & Payments",icon:"bi-wallet2",comingSoon:true},
+ {label:"Communication",icon:"bi-chat-square-text",comingSoon:true},
+ {label:"Reports",icon:"bi-bar-chart",comingSoon:true},
+].filter(item => !item.permission || can(item.permission)));
 const platformNavigation = [{label:"Dashboard",icon:"bi-grid-1x2",to:"/platform"},{label:"Schools",icon:"bi-buildings",to:"/platform/tenants"},{label:"Users",icon:"bi-people",comingSoon:true},{label:"Billing",icon:"bi-credit-card",comingSoon:true},{label:"Reports",icon:"bi-bar-chart",comingSoon:true}];
-const navigation = computed(() => auth.isPlatform ? platformNavigation : tenantNavigation);
+const navigation = computed(() => auth.isPlatform ? platformNavigation : tenantNavigation.value);
 function isActive(item){return item.to&&(route.path===item.to||route.path.startsWith(`${item.to}/`))}
 function closeSidebar(){sidebarOpen.value=false}
 function handleResize(){if(window.innerWidth>=992)sidebarOpen.value=false}
