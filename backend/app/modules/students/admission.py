@@ -47,9 +47,12 @@ async def get_admission_number_settings(tenant_id: UUID) -> dict:
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
+            # Keep the LIKE pattern in the parameter list. aiomysql uses Python
+            # %-formatting for query parameters, so a literal '%' in the SQL
+            # string can be interpreted as a formatting directive.
             await cur.execute(
-                "SELECT setting_key, setting_value FROM school_settings WHERE tenant_id=%s AND setting_key LIKE 'admission_number_%'",
-                (str(tenant_id),),
+                "SELECT setting_key, setting_value FROM school_settings WHERE tenant_id=%s AND setting_key LIKE %s",
+                (str(tenant_id), "admission_number_%"),
             )
             rows = await cur.fetchall()
     values = DEFAULTS.copy()
