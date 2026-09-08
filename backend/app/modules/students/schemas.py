@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 from datetime import date
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+import re
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 def clean(value: str | None) -> str | None:
@@ -8,6 +13,13 @@ def clean(value: str | None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def validate_email(value: str | None) -> str | None:
+    value = clean(value)
+    if value and not EMAIL_RE.match(value):
+        raise ValueError("invalid email address")
+    return value
 
 
 class StudentCreate(BaseModel):
@@ -66,12 +78,14 @@ class GuardianCreate(BaseModel):
     last_name: str = Field(min_length=1, max_length=100)
     phone: str | None = Field(default=None, max_length=40)
     alternative_phone: str | None = Field(default=None, max_length=40)
-    email: EmailStr | None = None
+    email: str | None = None
     address: str | None = Field(default=None, max_length=255)
     occupation: str | None = Field(default=None, max_length=150)
     employer: str | None = Field(default=None, max_length=190)
     preferred_contact_method: str = Field(default="phone", pattern="^(phone|sms|email|whatsapp|any)$")
     status: str = Field(default="active", pattern="^(active|inactive)$")
+
+    _email = field_validator("email")(validate_email)
 
 
 class GuardianUpdate(BaseModel):
@@ -79,12 +93,14 @@ class GuardianUpdate(BaseModel):
     last_name: str | None = Field(default=None, min_length=1, max_length=100)
     phone: str | None = Field(default=None, max_length=40)
     alternative_phone: str | None = Field(default=None, max_length=40)
-    email: EmailStr | None = None
+    email: str | None = None
     address: str | None = Field(default=None, max_length=255)
     occupation: str | None = Field(default=None, max_length=150)
     employer: str | None = Field(default=None, max_length=190)
     preferred_contact_method: str | None = Field(default=None, pattern="^(phone|sms|email|whatsapp|any)$")
     status: str | None = Field(default=None, pattern="^(active|inactive)$")
+
+    _email = field_validator("email")(validate_email)
 
 
 class GuardianResponse(GuardianCreate):
