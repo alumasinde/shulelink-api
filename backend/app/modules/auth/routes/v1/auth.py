@@ -18,7 +18,6 @@ from app.modules.auth.hardening_service import (
     verify_mfa_challenge,
     verify_mfa_enrollment,
 )
-from app.modules.auth.login import login_user
 from app.modules.auth.schemas import (
     ActivateAccountRequest,
     ActivationResponse,
@@ -35,7 +34,7 @@ from app.modules.auth.schemas import (
     RefreshRequest,
     TokenResponse,
 )
-from app.modules.auth.service import logout_session, refresh_session
+from app.modules.auth.service import login_user, logout_session, refresh_session
 from app.modules.tenants.access import establish_tenant_access, revoke_tenant_access
 from app.modules.tenants.schemas import TenantAccessRequest, TenantAccessResponse
 
