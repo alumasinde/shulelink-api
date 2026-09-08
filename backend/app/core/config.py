@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     db_name: str = "shulelink"
     db_user: str = "root"
     db_password: str = ""
+    db_ssl_ca: str | None = None
+    db_ssl_verify: bool = True
     db_pool_min_size: int = Field(default=2, ge=1)
     db_pool_max_size: int = Field(default=10, ge=1)
     db_pool_recycle_seconds: int = Field(default=1800, ge=60)
@@ -38,6 +40,24 @@ class Settings(BaseSettings):
     access_token_minutes: int = Field(default=15, ge=5, le=60)
     refresh_token_days: int = Field(default=30, ge=1, le=90)
     password_min_length: int = Field(default=8, ge=8, le=128)
+
+    auth_cookie_mode: bool = False
+    auth_cookie_secure: bool = False
+    auth_cookie_samesite: str = "lax"
+    csrf_token_bytes: int = Field(default=32, ge=16, le=64)
+    auth_reset_return_token: bool = False
+    password_reset_minutes: int = Field(default=30, ge=5, le=120)
+    mfa_challenge_minutes: int = Field(default=5, ge=1, le=15)
+    mfa_issuer: str = "ShuleLink"
+    credential_encryption_key: str | None = None
+
+    # A separate provisioner identity may create dedicated tenant databases/users.
+    # The normal application user remains least-privilege and must not need CREATE USER/DB.
+    db_provisioner_host: str | None = None
+    db_provisioner_port: int = 3306
+    db_provisioner_user: str | None = None
+    db_provisioner_password: str | None = None
+
     platform_admin_host: str = "admin.shulelink.co.ke"
     root_domain: str = "shulelink.co.ke"
 
@@ -47,6 +67,10 @@ class Settings(BaseSettings):
     def validate_runtime(self):
         if self.db_pool_max_size < self.db_pool_min_size:
             raise ValueError("DB_POOL_MAX_SIZE must be greater than or equal to DB_POOL_MIN_SIZE")
+        if self.auth_cookie_samesite.lower() not in {"lax", "strict", "none"}:
+            raise ValueError("AUTH_COOKIE_SAMESITE must be lax, strict or none")
+        if self.auth_cookie_samesite.lower() == "none" and not self.auth_cookie_secure:
+            raise ValueError("AUTH_COOKIE_SECURE must be true when SameSite=None")
         if self.app_env.lower() == "production":
             if self.debug:
                 raise ValueError("DEBUG must be false in production")
@@ -58,6 +82,12 @@ class Settings(BaseSettings):
                 raise ValueError("A shared rate-limit store such as Redis is required in production")
             if not self.cors_origin_list:
                 raise ValueError("CORS_ORIGINS must contain at least one trusted origin in production")
+            if not self.auth_cookie_mode or not self.auth_cookie_secure:
+                raise ValueError("Production browser authentication requires Secure HttpOnly cookie mode")
+            if not self.credential_encryption_key:
+                raise ValueError("CREDENTIAL_ENCRYPTION_KEY is required in production")
+            if not self.db_ssl_ca:
+                raise ValueError("DB_SSL_CA is required in production")
         return self
 
     @staticmethod
