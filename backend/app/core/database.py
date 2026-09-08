@@ -1,5 +1,6 @@
 from pathlib import Path
 import asyncio
+import ssl
 
 import aiomysql
 
@@ -9,6 +10,16 @@ _pool: aiomysql.Pool | None = None
 _pool_lock = asyncio.Lock()
 
 
+def _ssl_context() -> ssl.SSLContext | None:
+    if not settings.db_ssl_ca:
+        return None
+    context = ssl.create_default_context(cafile=settings.db_ssl_ca)
+    if not settings.db_ssl_verify:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    return context
+
+
 async def initialize_database() -> None:
     global _pool
     if _pool is not None:
@@ -16,7 +27,7 @@ async def initialize_database() -> None:
     async with _pool_lock:
         if _pool is not None:
             return
-        _pool = await aiomysql.create_pool(
+        kwargs = dict(
             host=settings.db_host,
             port=settings.db_port,
             user=settings.db_user,
@@ -32,6 +43,10 @@ async def initialize_database() -> None:
             charset="utf8mb4",
             use_unicode=True,
         )
+        ssl_context = _ssl_context()
+        if ssl_context is not None:
+            kwargs["ssl"] = ssl_context
+        _pool = await aiomysql.create_pool(**kwargs)
 
 
 def get_pool() -> aiomysql.Pool:
