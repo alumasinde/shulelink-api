@@ -51,8 +51,14 @@ class Settings(BaseSettings):
     mfa_issuer: str = "ShuleLink"
     credential_encryption_key: str | None = None
 
-    # A separate provisioner identity may create dedicated tenant databases/users.
-    # The normal application user remains least-privilege and must not need CREATE USER/DB.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+    smtp_starttls: bool = True
+    password_reset_base_url: str = "http://localhost:5173/reset-password"
+
     db_provisioner_host: str | None = None
     db_provisioner_port: int = 3306
     db_provisioner_user: str | None = None
@@ -88,6 +94,10 @@ class Settings(BaseSettings):
                 raise ValueError("CREDENTIAL_ENCRYPTION_KEY is required in production")
             if not self.db_ssl_ca:
                 raise ValueError("DB_SSL_CA is required in production")
+            if not all((self.smtp_host, self.smtp_username, self.smtp_password, self.smtp_from)):
+                raise ValueError("SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM are required in production")
+            if self.auth_reset_return_token:
+                raise ValueError("AUTH_RESET_RETURN_TOKEN must be false in production")
         return self
 
     @staticmethod
