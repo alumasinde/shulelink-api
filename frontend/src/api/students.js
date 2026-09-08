@@ -5,6 +5,12 @@ export const students = {
   get: async (id) => (await api.get(`/students/${id}`)).data,
   create: async (payload) => (await api.post('/students', payload)).data,
   update: async (id, payload) => (await api.patch(`/students/${id}`, payload)).data,
+  uploadPhoto: async (id, file) => {
+    const form = new FormData()
+    form.append('photo', file)
+    return (await api.post(`/students/${id}/photo`, form, { headers: { 'Content-Type': 'multipart/form-data' } })).data
+  },
+  getPhoto: async (id) => (await api.get(`/students/${id}/photo`, { responseType: 'blob' })).data,
   guardians: async (id) => (await api.get(`/students/${id}/guardians`)).data,
   linkGuardian: async (id, payload) => (await api.post(`/students/${id}/guardians`, payload)).data,
   unlinkGuardian: async (id, guardianId) => (await api.delete(`/students/${id}/guardians/${guardianId}`)).data,
@@ -15,6 +21,11 @@ export const students = {
   uploadDocument: async (id, payload) => (await api.post(`/students/${id}/documents`, payload)).data,
   documentTypes: async () => (await api.get('/students/document-types')).data,
   createDocumentType: async (payload) => (await api.post('/students/document-types', payload)).data,
+}
+
+export const admissionNumber = {
+  get: async () => (await api.get('/students/admission-number-settings')).data,
+  update: async (payload) => (await api.put('/students/admission-number-settings', payload)).data,
 }
 
 export const guardians = {
