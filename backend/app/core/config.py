@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     jwt_secret_key: str = "change-this-in-production"
     jwt_algorithm: str = "HS256"
+    jwt_issuer: str = "shulelink-api"
+    jwt_audience: str = "shulelink"
     access_token_minutes: int = Field(default=15, ge=5, le=60)
     refresh_token_days: int = Field(default=30, ge=1, le=90)
     password_min_length: int = Field(default=8, ge=8, le=128)
