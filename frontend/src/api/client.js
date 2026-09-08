@@ -5,8 +5,6 @@ const isPlatformHost = host === "admin.localhost" || host === "admin.shulelink.c
 const configuredApi = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
 
 function resolveApiBase() {
-  // Local development is host-aware. Never send platform/tenant requests to
-  // 127.0.0.1 because the backend uses the Host header to resolve tenancy.
   if (host.endsWith(".localhost")) return `${window.location.protocol}//${host}:8000/api/v1`;
   if (host.endsWith(".shulelink.co.ke")) return `${window.location.protocol}//${host}/api/v1`;
   if (isPlatformHost) return `${window.location.protocol}//admin.localhost:8000/api/v1`;
@@ -60,7 +58,9 @@ api.interceptors.response.use(
 );
 
 export function getApiError(error, fallback = "Something went wrong. Please try again.") {
-  const detail = error?.response?.data?.detail;
-  if (Array.isArray(detail)) return detail.map((item) => item.msg || String(item)).join(" ");
-  return detail || error?.response?.data?.message || error?.message || fallback;
+  const payload = error?.response?.data;
+  const structured = payload?.error;
+  if (structured?.message) return structured.message;
+  if (Array.isArray(payload?.detail)) return payload.detail.map((item) => item.msg || String(item)).join(" ");
+  return payload?.detail || payload?.message || error?.message || fallback;
 }
