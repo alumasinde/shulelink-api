@@ -13,6 +13,7 @@ from app.core.database import close_database, initialize_database
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestBodyLimitMiddleware, RequestContextMiddleware
+from app.modules.health.routes.v1.health import limiter
 from app.routes.web import router
 
 logger = logging.getLogger("shulelink")
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
         debug=settings.debug,
         lifespan=lifespan,
     )
+    application.state.limiter = limiter
     application.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     register_exception_handlers(application)
     application.add_middleware(RequestContextMiddleware)
