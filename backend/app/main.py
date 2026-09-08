@@ -11,6 +11,7 @@ from app.core.database import close_database, initialize_database
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestBodyLimitMiddleware, RequestContextMiddleware
+from app.core.csrf import CSRFMiddleware
 from app.core.rate_limit import limiter
 from app.core.tenant_db import close_tenant_pools
 from app.routes.web import router
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(application)
     application.add_middleware(RequestContextMiddleware)
     application.add_middleware(RequestBodyLimitMiddleware)
+    application.add_middleware(CSRFMiddleware)
     application.add_middleware(SlowAPIMiddleware)
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_host_list)
     application.add_middleware(
@@ -51,7 +53,7 @@ def create_app() -> FastAPI:
         allow_origin_regex=r"^https?://([a-z0-9-]+\.)?localhost:5173$|^https://([a-z0-9-]+\.)?shulelink\.co\.ke$",
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID", "X-CSRF-Token"],
     )
     application.include_router(router)
 
