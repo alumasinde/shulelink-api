@@ -20,7 +20,7 @@ class JsonFormatter(logging.Formatter):
         request_id = request_id_context.get()
         if request_id:
             payload["request_id"] = request_id
-        for key in ("event", "method", "path", "status_code", "duration_ms", "client_ip", "user_type", "tenant_id"):
+        for key in ("event", "method", "path", "status_code", "duration_ms", "client_ip", "user_id", "user_type", "tenant_id"):
             value = getattr(record, key, None)
             if value is not None:
                 payload[key] = value
@@ -36,8 +36,6 @@ def configure_logging() -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
-
-    # SQL must never be emitted by the database driver in production logs.
     logging.getLogger("aiomysql").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
