@@ -1,15 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.dependencies import Principal, require_tenant_permission
+from app.core.dependencies import Principal, get_current_principal, require_tenant_permission
 from app.core.database import get_pool
 
 router = APIRouter(prefix="/portal", tags=["Portal"])
 
 @router.get("/me")
-async def portal_me(principal: Principal, tenant_id=Depends(require_tenant_permission("portal.dashboard"))):
+async def portal_me(principal: Principal = Depends(get_current_principal), tenant_id=Depends(require_tenant_permission("portal.dashboard"))):
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            if "guardian.self" in await _permissions(cur, tenant_id, principal.user_id):
+            permissions = await _permissions(cur, tenant_id, principal.user_id)
+            if "guardian.self" in permissions:
                 await cur.execute("SELECT id,first_name,last_name,phone,email FROM guardians WHERE tenant_id=%s AND tenant_user_id=%s LIMIT 1", (str(tenant_id), str(principal.user_id)))
                 guardian = await cur.fetchone()
                 if not guardian:
@@ -17,7 +18,7 @@ async def portal_me(principal: Principal, tenant_id=Depends(require_tenant_permi
                 await cur.execute("SELECT s.id,s.admission_number,s.first_name,s.middle_name,s.last_name,s.status FROM students s JOIN student_guardians sg ON sg.student_id=s.id WHERE sg.tenant_id=%s AND sg.guardian_id=%s ORDER BY s.last_name,s.first_name", (str(tenant_id), str(guardian[0])))
                 children = [dict(id=str(r[0]), admission_number=r[1], first_name=r[2], middle_name=r[3], last_name=r[4], status=r[5]) for r in await cur.fetchall()]
                 return {"portal": "parent", "profile": {"id": str(guardian[0]), "first_name": guardian[1], "last_name": guardian[2], "phone": guardian[3], "email": guardian[4]}, "children": children}
-            if "student.self" in await _permissions(cur, tenant_id, principal.user_id):
+            if "student.self" in permissions:
                 await cur.execute("SELECT id,admission_number,first_name,middle_name,last_name,date_of_birth,gender,status FROM students WHERE tenant_id=%s AND tenant_user_id=%s LIMIT 1", (str(tenant_id), str(principal.user_id)))
                 student = await cur.fetchone()
                 if not student:
