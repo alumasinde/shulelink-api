@@ -5,7 +5,8 @@ from app.core.dependencies import Principal, get_current_principal, require_plat
 from app.core.rate_limit import limiter
 from app.core.database import get_pool
 from app.modules.auth.schemas import LoginRequest, LogoutRequest, MeResponse, RefreshRequest, TokenResponse, ActivateAccountRequest, ActivationResponse
-from app.modules.auth.service import login_user, logout_session, refresh_session
+from app.modules.auth.login import login_user
+from app.modules.auth.service import logout_session, refresh_session
 from app.modules.auth.access import activate_account, get_role_context
 from app.modules.tenants.schemas import TenantAccessRequest, TenantAccessResponse
 from app.modules.tenants.access import establish_tenant_access, revoke_tenant_access
