@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { COOKIE_AUTH_MODE } from "../api/client";
-import { login as loginRequest, logout as logoutRequest, me as meRequest } from "../api/auth";
+import { login as loginRequest, logout as logoutRequest, me as meRequest, verifyMfa as verifyMfaRequest } from "../api/auth";
 
 const ACCESS_KEY = "shulelink_access_token";
 const REFRESH_KEY = "shulelink_refresh_token";
@@ -46,6 +46,17 @@ export const useAuthStore = defineStore("auth", () => {
     } finally { loading.value = false; }
   }
 
+  async function completeMfa(challengeId, code) {
+    loading.value = true;
+    try {
+      const result = await verifyMfaRequest(challengeId, code);
+      persistTokens(result);
+      user.value = await meRequest();
+      localStorage.setItem(USER_KEY, JSON.stringify(user.value));
+      return user.value;
+    } finally { loading.value = false; }
+  }
+
   async function hydrate() {
     try {
       user.value = await meRequest();
@@ -70,5 +81,5 @@ export const useAuthStore = defineStore("auth", () => {
     localStorage.removeItem(USER_KEY);
   }
 
-  return { accessToken, refreshToken, user, loading, isAuthenticated, isPlatform, login, hydrate, logout, clear };
+  return { accessToken, refreshToken, user, loading, isAuthenticated, isPlatform, login, completeMfa, hydrate, logout, clear };
 });
