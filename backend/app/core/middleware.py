@@ -2,6 +2,9 @@ import time
 import uuid
 
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
+from slowapi.errors import RateLimitExceeded
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
@@ -22,7 +25,17 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             status_code = response.status_code
             return response
+        except StarletteHTTPException as exc:
+            status_code = exc.status_code
+            raise
+        except RequestValidationError:
+            status_code = 422
+            raise
+        except RateLimitExceeded:
+            status_code = 429
+            raise
         except Exception:
+            status_code = 500
             logger.exception(
                 "request failed",
                 extra={
