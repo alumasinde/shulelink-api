@@ -6,16 +6,18 @@ from app.modules.students.service import *
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
-read_tenant = lambda: None
 
 async def require_read(tenant_id: UUID = Depends(require_tenant_permission("students.read"))):
     return tenant_id
 
+
 async def require_manage(tenant_id: UUID = Depends(require_tenant_permission("students.manage"))):
     return tenant_id
 
+
 async def require_enroll(tenant_id: UUID = Depends(require_tenant_permission("students.enroll"))):
     return tenant_id
+
 
 async def require_documents(tenant_id: UUID = Depends(require_tenant_permission("students.documents"))):
     return tenant_id
@@ -29,6 +31,37 @@ async def students(tenant_id=Depends(require_read), search: str | None = Query(d
 @router.post("", response_model=StudentResponse, status_code=status.HTTP_201_CREATED)
 async def create(payload: StudentCreate, tenant_id=Depends(require_manage)):
     return await create_student(tenant_id, payload.model_dump())
+
+
+# Static collection routes must be registered before /{student_id}.
+@router.get("/document-types", response_model=list[DocumentTypeResponse])
+async def document_types(tenant_id=Depends(require_read)):
+    return await list_document_types(tenant_id)
+
+
+@router.post("/document-types", response_model=DocumentTypeResponse, status_code=status.HTTP_201_CREATED)
+async def create_document_type_route(payload: DocumentTypeCreate, tenant_id=Depends(require_documents)):
+    return await create_document_type(tenant_id, payload.model_dump())
+
+
+@router.get("/guardians", response_model=list[GuardianResponse])
+async def all_guardians(tenant_id=Depends(require_read), search: str | None = Query(default=None, max_length=100), limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0)):
+    return await list_guardians(tenant_id, search, limit, offset)
+
+
+@router.post("/guardians", response_model=GuardianResponse, status_code=status.HTTP_201_CREATED)
+async def create_guardian_route(payload: GuardianCreate, tenant_id=Depends(require_manage)):
+    return await create_guardian(tenant_id, payload.model_dump())
+
+
+@router.get("/guardians/{guardian_id}", response_model=GuardianResponse)
+async def guardian(guardian_id: UUID, tenant_id=Depends(require_read)):
+    return await get_guardian(tenant_id, guardian_id)
+
+
+@router.patch("/guardians/{guardian_id}", response_model=GuardianResponse)
+async def update_guardian_route(guardian_id: UUID, payload: GuardianUpdate, tenant_id=Depends(require_manage)):
+    return await update_guardian(tenant_id, guardian_id, payload.model_dump(exclude_unset=True))
 
 
 @router.get("/{student_id}", response_model=StudentDetailResponse)
@@ -83,33 +116,3 @@ async def documents(student_id: UUID, tenant_id=Depends(require_documents)):
 @router.post("/{student_id}/documents", response_model=StudentDocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(student_id: UUID, payload: StudentDocumentCreate, tenant_id=Depends(require_documents), principal: Principal = Depends(get_current_principal)):
     return await create_document(tenant_id, student_id, payload.model_dump(), principal.user_id)
-
-
-@router.get("/document-types", response_model=list[DocumentTypeResponse])
-async def document_types(tenant_id=Depends(require_read)):
-    return await list_document_types(tenant_id)
-
-
-@router.post("/document-types", response_model=DocumentTypeResponse, status_code=status.HTTP_201_CREATED)
-async def create_document_type_route(payload: DocumentTypeCreate, tenant_id=Depends(require_documents)):
-    return await create_document_type(tenant_id, payload.model_dump())
-
-
-@router.get("/guardians", response_model=list[GuardianResponse])
-async def all_guardians(tenant_id=Depends(require_read), search: str | None = Query(default=None, max_length=100), limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0)):
-    return await list_guardians(tenant_id, search, limit, offset)
-
-
-@router.post("/guardians", response_model=GuardianResponse, status_code=status.HTTP_201_CREATED)
-async def create_guardian_route(payload: GuardianCreate, tenant_id=Depends(require_manage)):
-    return await create_guardian(tenant_id, payload.model_dump())
-
-
-@router.get("/guardians/{guardian_id}", response_model=GuardianResponse)
-async def guardian(guardian_id: UUID, tenant_id=Depends(require_read)):
-    return await get_guardian(tenant_id, guardian_id)
-
-
-@router.patch("/guardians/{guardian_id}", response_model=GuardianResponse)
-async def update_guardian_route(guardian_id: UUID, payload: GuardianUpdate, tenant_id=Depends(require_manage)):
-    return await update_guardian(tenant_id, guardian_id, payload.model_dump(exclude_unset=True))
