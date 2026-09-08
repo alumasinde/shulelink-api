@@ -20,7 +20,6 @@ def _unauthorized() -> HTTPException:
 
 async def login_user(email: str, password: str, user_type: str, tenant_id: UUID | None = None):
     pool = get_pool()
-    table = "platform_users" if user_type == "platform" else "tenant_users"
     normalized = email.lower().strip()
     await ensure_not_throttled(user_type, normalized)
 
@@ -29,23 +28,20 @@ async def login_user(email: str, password: str, user_type: str, tenant_id: UUID 
             await conn.begin()
             async with conn.cursor() as cur:
                 if user_type == "tenant":
-                    await cur.execute(f"SELECT id,email,first_name,last_name,password_hash,status FROM {table} WHERE email=%s OR login_identifier=%s LIMIT 1", (normalized, normalized))
+                    if tenant_id is None:
+                        await conn.rollback()
+                        raise HTTPException(status_code=400, detail="Tenant context is required")
+                    await cur.execute(
+                        "SELECT u.id,u.email,u.first_name,u.last_name,u.password_hash,u.status FROM tenant_users u JOIN tenant_memberships m ON m.tenant_user_id=u.id WHERE m.tenant_id=%s AND m.status='active' AND (u.email=%s OR u.login_identifier=%s) LIMIT 1",
+                        (str(tenant_id), normalized, normalized),
+                    )
                 else:
-                    await cur.execute(f"SELECT id,email,first_name,last_name,password_hash,status FROM {table} WHERE email=%s LIMIT 1", (normalized,))
+                    await cur.execute("SELECT id,email,first_name,last_name,password_hash,status FROM platform_users WHERE email=%s LIMIT 1", (normalized,))
                 user = await cur.fetchone()
                 if not user or user[5] != "active" or not verify_password(password, user[4]):
                     await conn.rollback()
                     await record_login_failure(user_type, normalized)
                     raise _unauthorized()
-                if user_type == "tenant":
-                    if tenant_id is None:
-                        await conn.rollback()
-                        raise HTTPException(status_code=400, detail="Tenant context is required")
-                    await cur.execute("SELECT 1 FROM tenant_memberships WHERE tenant_id=%s AND tenant_user_id=%s AND status='active' LIMIT 1", (str(tenant_id),str(user[0])))
-                    if not await cur.fetchone():
-                        await conn.rollback()
-                        await record_login_failure(user_type, normalized)
-                        raise _unauthorized()
 
                 await cur.execute("SELECT 1 FROM mfa_factors WHERE user_type=%s AND user_id=%s AND factor_type='totp' AND enabled=1 LIMIT 1", (user_type,str(user[0])))
                 has_mfa = bool(await cur.fetchone())
@@ -57,6 +53,7 @@ async def login_user(email: str, password: str, user_type: str, tenant_id: UUID 
 
                 now = datetime.now(timezone.utc).replace(tzinfo=None)
                 access, refresh_raw, access_expires, _ = await issue_session(conn, user_type, UUID(str(user[0])), tenant_id)
+                table = "platform_users" if user_type == "platform" else "tenant_users"
                 await cur.execute(f"UPDATE {table} SET last_login_at=%s WHERE id=%s", (now,str(user[0])))
                 await cur.execute("INSERT INTO identity_audit_log (actor_type,actor_id,tenant_id,action,target_type,target_id) VALUES (%s,%s,%s,'auth.login',%s,%s)", (user_type,str(user[0]),str(tenant_id) if tenant_id else None,user_type,str(user[0])))
                 await conn.commit()
@@ -86,7 +83,7 @@ async def refresh_session(refresh_token: str):
             if not user or user[0] != "active":
                 raise HTTPException(status_code=401, detail="User account is not active")
             if session[4]:
-                await cur.execute("SELECT expires_at,revoked_at FROM tenant_access_sessions WHERE id=%s", (str(session[4],)))
+                await cur.execute("SELECT expires_at,revoked_at FROM tenant_access_sessions WHERE id=%s", (str(session[4]),))
                 access_session = await cur.fetchone()
                 if not access_session or access_session[1] is not None or access_session[0] <= now:
                     raise HTTPException(status_code=401, detail="Tenant access session is no longer active")
