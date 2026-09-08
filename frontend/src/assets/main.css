@@ -83,7 +83,7 @@ code { color: #475569; }
 .dashboard-heading h1 { margin: 7px 0 5px; font-size: clamp(1.65rem, 2.4vw, 2.05rem); letter-spacing: -.035em; font-weight: 700; }
 .dashboard-heading p { margin: 0; color: var(--sl-muted); font-size: .9rem; }
 .wave { font-size: 1.5rem; vertical-align: 2px; }
-.welcome-banner { min-height: 185px; border-radius: 18px; background: linear-gradient(110deg, #174ea6 0%, #2863ba 68%, #3f78c5 100%); color: #fff; padding: 28px 32px; display: flex; align-items: center; justify-content: space-between; overflow: hidden; position: relative; box-shadow: 0 12px 30px rgba(23,78,166,.14); }
+.welcome-banner { height: 165px; border-radius: 18px; background: linear-gradient(110deg, #174ea6 0%, #2863ba 68%, #3f78c5 100%); color: #fff; padding: 28px 32px; display: flex; align-items: center; justify-content: space-between; overflow: hidden; position: relative; box-shadow: 0 12px 30px rgba(23,78,166,.14); }
 .welcome-copy { position: relative; z-index: 2; max-width: 720px; }
 .banner-label { font-size: .67rem; letter-spacing: .12em; font-weight: 700; opacity: .78; }
 .welcome-banner h2 { margin: 8px 0 6px; font-size: 1.45rem; letter-spacing: -.025em; }
