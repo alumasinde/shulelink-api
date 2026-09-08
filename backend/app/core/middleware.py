@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
 from app.core.logging import logger, request_id_context
@@ -17,6 +17,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         token = request_id_context.set(request_id)
         started = time.perf_counter()
         status_code = 500
+        response: Response | None = None
         try:
             response = await call_next(request)
             status_code = response.status_code
@@ -34,7 +35,6 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             )
             raise
         finally:
-            duration_ms = round((time.perf_counter() - started) * 1000, 2)
             logger.info(
                 "request completed",
                 extra={
@@ -42,18 +42,19 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                     "method": request.method,
                     "path": request.url.path,
                     "status_code": status_code,
-                    "duration_ms": duration_ms,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
                     "client_ip": request.client.host if request.client else None,
                 },
             )
             request_id_context.reset(token)
-            if "response" in locals():
+            if response is not None:
                 response.headers["X-Request-ID"] = request_id
                 response.headers["X-Content-Type-Options"] = "nosniff"
                 response.headers["X-Frame-Options"] = "DENY"
                 response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
                 response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-                response.headers["Cache-Control"] = "no-store" if request.url.path.startswith(settings.api_v1_prefix) else response.headers.get("Cache-Control", "")
+                if request.url.path.startswith(settings.api_v1_prefix):
+                    response.headers["Cache-Control"] = "no-store"
 
 
 class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
@@ -62,7 +63,21 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
         if content_length:
             try:
                 if int(content_length) > settings.max_request_body_bytes:
-                    return Response("Request body too large", status_code=413, headers={"X-Request-ID": getattr(request.state, "request_id", "")})
+                    request_id = getattr(request.state, "request_id", "unknown")
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "success": False,
+                            "error": {"code": "REQUEST_TOO_LARGE", "message": "Request body too large"},
+                            "request_id": request_id,
+                        },
+                        headers={"X-Request-ID": request_id},
+                    )
             except ValueError:
-                return Response("Invalid Content-Length", status_code=400)
+                request_id = getattr(request.state, "request_id", "unknown")
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "error": {"code": "INVALID_CONTENT_LENGTH", "message": "Invalid Content-Length header"}, "request_id": request_id},
+                    headers={"X-Request-ID": request_id},
+                )
         return await call_next(request)
