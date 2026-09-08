@@ -48,6 +48,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                     "status_code": status_code,
                     "duration_ms": round((time.perf_counter() - started) * 1000, 2),
                     "client_ip": request.client.host if request.client else None,
+                    "user_id": getattr(request.state, "user_id", None),
                     "user_type": getattr(request.state, "user_type", None),
                     "tenant_id": getattr(request.state, "tenant_id", None),
                 },
