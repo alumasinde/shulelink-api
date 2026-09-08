@@ -38,11 +38,20 @@ def create_app() -> FastAPI:
     application.add_middleware(RequestBodyLimitMiddleware)
     application.add_middleware(SlowAPIMiddleware)
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_host_list)
-    application.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"], allow_headers=["Authorization","Content-Type","Accept","X-Request-ID"])
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_origin_regex=r"^https?://([a-z0-9-]+\.)?localhost:5173$|^https://([a-z0-9-]+\.)?shulelink\.co\.ke$",
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID"],
+    )
     application.include_router(router)
+
     @application.get("/", include_in_schema=False)
     async def root():
         return {"name": settings.app_name, "version": settings.app_version, "status": "ok"}
+
     return application
 
 app = create_app()
