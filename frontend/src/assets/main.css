@@ -1,2 +1,38 @@
-body { font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-.navbar-brand { letter-spacing: -0.02em; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root { --sl-primary: #174ea6; --sl-ink: #172033; --sl-muted: #6b7280; --sl-bg: #f6f8fb; }
+body { margin: 0; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--sl-ink); background: var(--sl-bg); }
+.app-shell { min-height: 100vh; background: var(--sl-bg); }
+.navbar-brand { letter-spacing: -0.03em; color: var(--sl-ink); }
+.navbar-brand:hover { color: var(--sl-primary); }
+.brand-mark { width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: var(--sl-primary); color: white; font-weight: 700; }
+.page-wrap { max-width: 1240px; margin: 0 auto; }
+.eyebrow { font-size: .72rem; letter-spacing: .12em; font-weight: 700; color: var(--sl-primary); }
+.tiny { font-size: .75rem; }
+.stat-card { height: 100%; background: #fff; border-radius: 14px; padding: 20px; display: flex; align-items: center; gap: 14px; box-shadow: 0 3px 16px rgba(23,32,51,.05); }
+.icon-box { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: #eef4ff; color: var(--sl-primary); font-size: 1.15rem; }
+.card { border-radius: 14px; }
+.table thead th { background: #fafbfc; color: #6b7280; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; border-bottom: 1px solid #edf0f4; }
+.table td { border-color: #edf0f4; }
+.status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; background: #9ca3af; }
+.status-dot.active { background: #198754; }
+.status-dot.provisioning { background: #f59e0b; }
+.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px 16px; background: radial-gradient(circle at top right, #eaf1ff, transparent 40%), var(--sl-bg); }
+.login-panel { width: 100%; max-width: 430px; background: #fff; border-radius: 20px; padding: 38px; box-shadow: 0 16px 55px rgba(23,32,51,.09); }
+.login-brand { display: flex; align-items: center; gap: 10px; font-size: 1.2rem; font-weight: 700; }
+.input-group-text { border-color: #dee2e6; color: #6b7280; }
+.form-control, .form-select { border-radius: 9px; padding-top: .65rem; padding-bottom: .65rem; }
+.form-control:focus, .form-select:focus { box-shadow: 0 0 0 .2rem rgba(23,78,166,.12); border-color: #8baee8; }
+.btn-primary { --bs-btn-bg: var(--sl-primary); --bs-btn-border-color: var(--sl-primary); --bs-btn-hover-bg: #123f87; --bs-btn-hover-border-color: #123f87; }
+.landing-page { min-height: 100vh; }
+.tech-pill { background: #fff; border: 1px solid #e5e9f0; border-radius: 999px; padding: 7px 12px; font-size: .82rem; }
+.hero-card { background: #fff; border-radius: 20px; padding: 30px; box-shadow: 0 18px 50px rgba(23,32,51,.08); }
+.hero-icon { width: 58px; height: 58px; display: flex; align-items: center; justify-content: center; border-radius: 16px; background: #eef4ff; color: var(--sl-primary); font-size: 1.5rem; margin-bottom: 22px; }
+.feature-row { display: flex; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid #edf0f4; font-size: .9rem; }
+.feature-row i { color: var(--sl-primary); }
+.modal-backdrop-custom { position: fixed; inset: 0; z-index: 1050; background: rgba(17,24,39,.48); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal-card { width: 100%; max-width: 560px; max-height: 90vh; overflow: auto; background: #fff; border-radius: 18px; padding: 28px; box-shadow: 0 20px 70px rgba(0,0,0,.18); }
+.check-item { background: #f7faf8; border: 1px solid #e0eee5; border-radius: 10px; padding: 12px; display: flex; gap: 9px; align-items: center; font-size: .9rem; }
+.check-item i { color: #198754; }
+code { color: #475569; }
+@media (max-width: 575px) { .login-panel { padding: 28px 22px; } .display-4 { font-size: 2.35rem; } }
