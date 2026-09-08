@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import HomeView from "../views/HomeView.vue";
 import LoginView from "../views/auth/LoginView.vue";
+import ActivateAccountView from "../views/auth/ActivateAccountView.vue";
 import PlatformDashboard from "../views/platform/PlatformDashboard.vue";
 import TenantsView from "../views/platform/TenantsView.vue";
 import TenantDashboard from "../views/tenant/TenantDashboard.vue";
@@ -13,7 +14,7 @@ import GuardiansView from "../views/tenant/GuardiansView.vue";
 const isPlatformHost=()=>["admin.localhost","admin.shulelink.co.ke","localhost","127.0.0.1"].includes(window.location.hostname);
 const portalPath=(user)=>user?.user_type==="platform"?"/platform":"/school/portal";
 const router=createRouter({history:createWebHistory(),routes:[
- {path:"/",name:"home",component:HomeView},{path:"/login",name:"login",component:LoginView,meta:{guestOnly:true}},
+ {path:"/",name:"home",component:HomeView},{path:"/login",name:"login",component:LoginView,meta:{guestOnly:true}},{path:"/activate",name:"activate",component:ActivateAccountView,meta:{guestOnly:true}},
  {path:"/platform",name:"platform-dashboard",component:PlatformDashboard,meta:{auth:true,platform:true}},
  {path:"/platform/tenants",name:"platform-tenants",component:TenantsView,meta:{auth:true,platform:true}},
  {path:"/school",name:"tenant-dashboard",component:TenantDashboard,meta:{auth:true,tenant:true}},
