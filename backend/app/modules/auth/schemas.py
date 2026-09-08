@@ -30,6 +30,21 @@ class MeResponse(BaseModel):
     last_name: str
     user_type: str
     tenant_id: UUID | None = None
+    roles: list[str] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    portal: str = "school"
+
+
+class ActivateAccountRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    password: str = Field(min_length=10, max_length=128)
+
+
+class ActivationResponse(BaseModel):
+    success: bool = True
+    message: str
+    email: str
+    expires_at: datetime | None = None
 
 
 class CreateTenantRequest(BaseModel):
