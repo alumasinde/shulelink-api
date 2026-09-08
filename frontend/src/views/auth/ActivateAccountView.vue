@@ -15,6 +15,8 @@ const loading = ref(false)
 async function submit() {
   error.value = ''
   message.value = ''
+  if (password.value.length < 8) { error.value = 'Password must be at least 8 characters.'; return }
+  if (!/[A-Z]/.test(password.value) || !/[a-z]/.test(password.value) || !/[0-9]/.test(password.value)) { error.value = 'Use at least one uppercase letter, one lowercase letter and one number.'; return }
   if (password.value !== confirm.value) { error.value = 'Passwords do not match.'; return }
   loading.value = true
   try {
@@ -37,9 +39,10 @@ async function submit() {
         <label class="form-label">Activation token</label>
         <input v-model="token" class="form-control mb-3" required>
         <label class="form-label">New password</label>
-        <input v-model="password" class="form-control mb-3" type="password" minlength="10" autocomplete="new-password" required>
+        <input v-model="password" class="form-control mb-2" type="password" minlength="8" autocomplete="new-password" required>
+        <div class="form-text mb-3">Minimum 8 characters with an uppercase letter, lowercase letter and number.</div>
         <label class="form-label">Confirm password</label>
-        <input v-model="confirm" class="form-control mb-4" type="password" minlength="10" autocomplete="new-password" required>
+        <input v-model="confirm" class="form-control mb-4" type="password" minlength="8" autocomplete="new-password" required>
         <button class="btn btn-primary w-100" :disabled="loading">{{ loading ? 'Activating…' : 'Activate account' }}</button>
       </form>
     </div>

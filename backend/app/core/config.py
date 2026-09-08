@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = Field(default=15, ge=5, le=60)
     refresh_token_days: int = Field(default=30, ge=1, le=90)
-    password_min_length: int = Field(default=10, ge=8, le=128)
+    password_min_length: int = Field(default=8, ge=8, le=128)
     platform_admin_host: str = "admin.shulelink.co.ke"
     root_domain: str = "shulelink.co.ke"
 

@@ -16,6 +16,7 @@ const currentYear = computed(() => {
   const years = counts.value.academicYearsData || [];
   return years.find((item) => item.is_current) || years[0] || null;
 });
+const canManageAccounts = computed(() => auth.user?.permissions?.includes("accounts.manage"));
 
 const setupItems = computed(() => [
   { label: "Campus", count: counts.value.campuses, icon: "bi-building", to: "/school/structure" },
@@ -98,39 +99,19 @@ onMounted(loadDashboard);
       </section>
 
       <section class="metric-grid mb-4">
-        <div class="metric-card">
-          <div class="metric-icon"><i class="bi bi-building"></i></div>
-          <div><span>Campuses</span><strong>{{ counts.campuses }}</strong><small>Configured</small></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-icon"><i class="bi bi-calendar3"></i></div>
-          <div><span>Academic Years</span><strong>{{ counts.academicYears }}</strong><small>{{ currentYear ? `Current: ${currentYear.name}` : "Not configured" }}</small></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-icon"><i class="bi bi-collection"></i></div>
-          <div><span>Classes</span><strong>{{ counts.classes }}</strong><small>{{ counts.streams }} streams</small></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-icon"><i class="bi bi-book"></i></div>
-          <div><span>Subjects</span><strong>{{ counts.subjects }}</strong><small>{{ counts.departments }} departments</small></div>
-        </div>
+        <div class="metric-card"><div class="metric-icon"><i class="bi bi-building"></i></div><div><span>Campuses</span><strong>{{ counts.campuses }}</strong><small>Configured</small></div></div>
+        <div class="metric-card"><div class="metric-icon"><i class="bi bi-calendar3"></i></div><div><span>Academic Years</span><strong>{{ counts.academicYears }}</strong><small>{{ currentYear ? `Current: ${currentYear.name}` : "Not configured" }}</small></div></div>
+        <div class="metric-card"><div class="metric-icon"><i class="bi bi-collection"></i></div><div><span>Classes</span><strong>{{ counts.classes }}</strong><small>{{ counts.streams }} streams</small></div></div>
+        <div class="metric-card"><div class="metric-icon"><i class="bi bi-book"></i></div><div><span>Subjects</span><strong>{{ counts.subjects }}</strong><small>{{ counts.departments }} departments</small></div></div>
       </section>
 
       <div class="row g-4">
         <div class="col-xl-8">
           <section class="dashboard-card h-100">
-            <div class="card-heading">
-              <div><h2>School setup</h2><p>Complete the essentials before adding operational data.</p></div>
-              <span class="setup-badge">{{ setupPercent }}% ready</span>
-            </div>
+            <div class="card-heading"><div><h2>School setup</h2><p>Complete the essentials before adding operational data.</p></div><span class="setup-badge">{{ setupPercent }}% ready</span></div>
             <div class="progress setup-progress mb-4"><div class="progress-bar" :style="{ width: `${setupPercent}%` }"></div></div>
             <div class="setup-list">
-              <router-link v-for="item in setupItems" :key="item.label" :to="item.to" class="setup-row">
-                <span class="setup-row-icon"><i class="bi" :class="item.icon"></i></span>
-                <span class="setup-row-copy"><strong>{{ item.label }}</strong><small>{{ item.count > 0 ? `${item.count} configured` : "Needs configuration" }}</small></span>
-                <span v-if="item.count > 0" class="setup-check"><i class="bi bi-check-circle-fill"></i></span>
-                <span v-else class="setup-next"><i class="bi bi-arrow-right"></i></span>
-              </router-link>
+              <router-link v-for="item in setupItems" :key="item.label" :to="item.to" class="setup-row"><span class="setup-row-icon"><i class="bi" :class="item.icon"></i></span><span class="setup-row-copy"><strong>{{ item.label }}</strong><small>{{ item.count > 0 ? `${item.count} configured` : "Needs configuration" }}</small></span><span v-if="item.count > 0" class="setup-check"><i class="bi bi-check-circle-fill"></i></span><span v-else class="setup-next"><i class="bi bi-arrow-right"></i></span></router-link>
             </div>
           </section>
         </div>
@@ -140,6 +121,7 @@ onMounted(loadDashboard);
             <div class="card-heading"><div><h2>Quick actions</h2><p>Common school tasks.</p></div></div>
             <div class="quick-actions">
               <router-link to="/school/structure" class="quick-action"><span><i class="bi bi-diagram-3"></i></span><div><strong>School Structure</strong><small>Campuses, classes & subjects</small></div><i class="bi bi-chevron-right"></i></router-link>
+              <router-link v-if="canManageAccounts" to="/school/portal-accounts" class="quick-action"><span><i class="bi bi-person-badge"></i></span><div><strong>Portal Accounts</strong><small>Parents & student login access</small></div><i class="bi bi-chevron-right"></i></router-link>
               <div class="quick-action muted"><span><i class="bi bi-person-plus"></i></span><div><strong>Add students</strong><small>Available in the next module</small></div><i class="bi bi-lock"></i></div>
               <div class="quick-action muted"><span><i class="bi bi-calendar-check"></i></span><div><strong>Take attendance</strong><small>Available in the next module</small></div><i class="bi bi-lock"></i></div>
             </div>
@@ -147,10 +129,7 @@ onMounted(loadDashboard);
         </div>
       </div>
 
-      <section class="dashboard-footer mt-4">
-        <div><i class="bi bi-shield-check"></i><span><strong>Secure school workspace</strong><small>Your workspace is isolated to <code>{{ hostname }}</code>.</small></span></div>
-        <router-link to="/school/structure">Manage settings <i class="bi bi-arrow-right ms-1"></i></router-link>
-      </section>
+      <section class="dashboard-footer mt-4"><div><i class="bi bi-shield-check"></i><span><strong>Secure school workspace</strong><small>Your workspace is isolated to <code>{{ hostname }}</code>.</small></span></div><router-link to="/school/structure">Manage settings <i class="bi bi-arrow-right ms-1"></i></router-link></section>
     </template>
   </div>
 </template>

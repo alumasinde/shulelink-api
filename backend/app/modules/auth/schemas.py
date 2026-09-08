@@ -37,7 +37,7 @@ class MeResponse(BaseModel):
 
 class ActivateAccountRequest(BaseModel):
     token: str = Field(min_length=32, max_length=256)
-    password: str = Field(min_length=10, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
 
 
 class ActivationResponse(BaseModel):
