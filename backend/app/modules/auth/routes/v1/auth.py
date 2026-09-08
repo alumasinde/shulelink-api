@@ -1,49 +1,104 @@
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+
 from app.core.config import settings
-from app.core.dependencies import Principal, get_current_principal, require_platform_permission
-from app.core.rate_limit import limiter
 from app.core.database import get_pool
-from app.modules.auth.schemas import LoginRequest, LogoutRequest, MeResponse, RefreshRequest, TokenResponse, ActivateAccountRequest, ActivationResponse
-from app.modules.auth.login import login_user
-from app.modules.auth.service import logout_session, refresh_session
+from app.core.dependencies import Principal, get_current_principal, require_platform_permission
+from app.core.logging import logger
+from app.core.rate_limit import limiter
 from app.modules.auth.access import activate_account, get_role_context
-from app.modules.tenants.schemas import TenantAccessRequest, TenantAccessResponse
+from app.modules.auth.login import login_user
+from app.modules.auth.schemas import (
+    ActivateAccountRequest,
+    ActivationResponse,
+    LoginRequest,
+    LogoutRequest,
+    MeResponse,
+    RefreshRequest,
+    TokenResponse,
+)
+from app.modules.auth.service import logout_session, refresh_session
 from app.modules.tenants.access import establish_tenant_access, revoke_tenant_access
+from app.modules.tenants.schemas import TenantAccessRequest, TenantAccessResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+async def _login(request: Request, payload: LoginRequest, user_type: str, tenant_id=None):
+    try:
+        access, refresh, expires = await login_user(payload.email, payload.password, user_type, tenant_id)
+        logger.info(
+            "authentication succeeded",
+            extra={
+                "event": "authn_login_success",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 200,
+                "user_type": user_type,
+                "tenant_id": str(tenant_id) if tenant_id else None,
+            },
+        )
+        return TokenResponse(access_token=access, refresh_token=refresh, expires_at=expires)
+    except Exception:
+        logger.warning(
+            "authentication failed",
+            extra={
+                "event": "authn_login_failure",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 401,
+                "user_type": user_type,
+                "tenant_id": str(tenant_id) if tenant_id else None,
+            },
+        )
+        raise
+
 
 @router.post("/platform/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def platform_login(request: Request, payload: LoginRequest):
     if (request.url.hostname or "") not in {settings.platform_admin_host, "admin.localhost"}:
         raise HTTPException(status_code=404, detail="Platform authentication endpoint not available on this host")
-    access, refresh, expires = await login_user(payload.email, payload.password, "platform")
-    return TokenResponse(access_token=access, refresh_token=refresh, expires_at=expires)
+    return await _login(request, payload, "platform")
+
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def tenant_login(request: Request, payload: LoginRequest):
     from app.core.dependencies import get_tenant_id_from_host
     tenant_id = await get_tenant_id_from_host(request)
-    access, refresh, expires = await login_user(payload.email, payload.password, "tenant", tenant_id)
-    return TokenResponse(access_token=access, refresh_token=refresh, expires_at=expires)
+    return await _login(request, payload, "tenant", tenant_id)
+
 
 @router.post("/activate", response_model=ActivationResponse)
 @limiter.limit("5/minute")
 async def activate(request: Request, payload: ActivateAccountRequest):
-    return ActivationResponse(**await activate_account(payload.token, payload.password))
+    try:
+        result = await activate_account(payload.token, payload.password)
+        logger.info("account activation succeeded", extra={"event": "authn_account_activation_success", "method": request.method, "path": request.url.path, "status_code": 200})
+        return ActivationResponse(**result)
+    except Exception:
+        logger.warning("account activation failed", extra={"event": "authn_account_activation_failure", "method": request.method, "path": request.url.path, "status_code": 400})
+        raise
+
 
 @router.post("/refresh", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def refresh(request: Request, payload: RefreshRequest):
-    access, refresh_token, expires = await refresh_session(payload.refresh_token)
-    return TokenResponse(access_token=access, refresh_token=refresh_token, expires_at=expires)
+    try:
+        access, refresh_token, expires = await refresh_session(payload.refresh_token)
+        return TokenResponse(access_token=access, refresh_token=refresh_token, expires_at=expires)
+    except Exception:
+        logger.warning("refresh token rejected", extra={"event": "authn_refresh_failure", "method": request.method, "path": request.url.path, "status_code": 401})
+        raise
+
 
 @router.post("/logout")
 async def logout(payload: LogoutRequest, principal: Principal = Depends(get_current_principal)):
     await logout_session(payload.refresh_token, principal.session_id)
     return {"success": True, "data": {"status": "logged_out"}}
+
 
 @router.get("/me", response_model=MeResponse)
 async def me(principal: Principal = Depends(get_current_principal)):
@@ -58,14 +113,17 @@ async def me(principal: Principal = Depends(get_current_principal)):
     context = await get_role_context(principal.user_id, principal.user_type, principal.tenant_id)
     return MeResponse(id=UUID(str(row[0])), email=row[1], first_name=row[2], last_name=row[3], user_type=principal.user_type, tenant_id=principal.tenant_id, **context)
 
+
 @router.get("/context")
 async def context(principal: Principal = Depends(get_current_principal)):
     return await get_role_context(principal.user_id, principal.user_type, principal.tenant_id)
+
 
 @router.post("/platform/tenant-access", response_model=TenantAccessResponse)
 async def tenant_access(payload: TenantAccessRequest, principal: Principal = Depends(require_platform_permission("tenant.access"))):
     access, expires, access_id = await establish_tenant_access(principal.user_id, payload.tenant_id, payload.reason, principal.session_id)
     return TenantAccessResponse(access_token=access, expires_at=expires.isoformat(), tenant_access_session_id=access_id)
+
 
 @router.delete("/platform/tenant-access/{access_id}")
 async def revoke_access(access_id: UUID, principal: Principal = Depends(require_platform_permission("tenant.access"))):
