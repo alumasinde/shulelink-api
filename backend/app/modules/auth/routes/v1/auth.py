@@ -4,8 +4,10 @@ from app.core.config import settings
 from app.core.dependencies import Principal, get_current_principal, require_platform_permission
 from app.core.rate_limit import limiter
 from app.core.database import get_pool
-from app.modules.auth.schemas import LoginRequest, LogoutRequest, MeResponse, RefreshRequest, TokenResponse
-from app.modules.auth.service import login_user, logout_session, refresh_session
+from app.modules.auth.schemas import LoginRequest, LogoutRequest, MeResponse, RefreshRequest, TokenResponse, ActivateAccountRequest, ActivationResponse
+from app.modules.auth.login import login_user
+from app.modules.auth.service import logout_session, refresh_session
+from app.modules.auth.access import activate_account, get_role_context
 from app.modules.tenants.schemas import TenantAccessRequest, TenantAccessResponse
 from app.modules.tenants.access import establish_tenant_access, revoke_tenant_access
 
@@ -26,6 +28,11 @@ async def tenant_login(request: Request, payload: LoginRequest):
     tenant_id = await get_tenant_id_from_host(request)
     access, refresh, expires = await login_user(payload.email, payload.password, "tenant", tenant_id)
     return TokenResponse(access_token=access, refresh_token=refresh, expires_at=expires)
+
+@router.post("/activate", response_model=ActivationResponse)
+@limiter.limit("5/minute")
+async def activate(payload: ActivateAccountRequest):
+    return ActivationResponse(**await activate_account(payload.token, payload.password))
 
 @router.post("/refresh", response_model=TokenResponse)
 @limiter.limit("10/minute")
@@ -48,7 +55,12 @@ async def me(principal: Principal = Depends(get_current_principal)):
             row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
-    return MeResponse(id=UUID(str(row[0])), email=row[1], first_name=row[2], last_name=row[3], user_type=principal.user_type, tenant_id=principal.tenant_id)
+    context = await get_role_context(principal.user_id, principal.user_type, principal.tenant_id)
+    return MeResponse(id=UUID(str(row[0])), email=row[1], first_name=row[2], last_name=row[3], user_type=principal.user_type, tenant_id=principal.tenant_id, **context)
+
+@router.get("/context")
+async def context(principal: Principal = Depends(get_current_principal)):
+    return await get_role_context(principal.user_id, principal.user_type, principal.tenant_id)
 
 @router.post("/platform/tenant-access", response_model=TenantAccessResponse)
 async def tenant_access(payload: TenantAccessRequest, principal: Principal = Depends(require_platform_permission("tenant.access"))):
