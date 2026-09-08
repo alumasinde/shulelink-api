@@ -42,12 +42,7 @@ def get_pool() -> aiomysql.Pool:
 
 def get_pool_stats() -> dict[str, int]:
     pool = get_pool()
-    return {
-        "size": pool.size,
-        "free": pool.freesize,
-        "in_use": max(pool.size - pool.freesize, 0),
-        "max": pool.maxsize,
-    }
+    return {"size": pool.size, "free": pool.freesize, "in_use": max(pool.size - pool.freesize, 0), "max": pool.maxsize}
 
 
 async def close_database() -> None:
@@ -78,26 +73,41 @@ async def run_migrations() -> None:
     migrations_dir = Path(__file__).resolve().parents[2] / "database" / "migrations"
     files = sorted(migrations_dir.glob("*.sql"))
     async with _pool.acquire() as connection:
-        async with connection.cursor() as cursor:
-            await cursor.execute("""
-                CREATE TABLE IF NOT EXISTS schema_migrations (
-                    version BIGINT UNSIGNED NOT NULL PRIMARY KEY,
-                    filename VARCHAR(255) NOT NULL,
-                    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE KEY uq_schema_migrations_filename (filename)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-            """)
-            await cursor.execute("SELECT version FROM schema_migrations")
-            applied = {row[0] for row in await cursor.fetchall()}
-            for path in files:
-                version = int(path.name.split("_", 1)[0])
-                if version in applied:
-                    continue
-                sql = path.read_text(encoding="utf-8").strip()
-                if not sql:
-                    continue
-                await cursor.execute(sql)
-                await cursor.execute(
-                    "INSERT INTO schema_migrations (version,filename) VALUES (%s,%s)",
-                    (version, path.name),
-                )
+        lock_acquired = False
+        try:
+            async with connection.cursor() as cursor:
+                await cursor.execute("SELECT GET_LOCK('shulelink:schema-migrations', 60)")
+                lock_acquired = (await cursor.fetchone())[0] == 1
+                if not lock_acquired:
+                    raise RuntimeError("Timed out waiting for the database migration lock")
+
+                await cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS schema_migrations (
+                        version BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+                        filename VARCHAR(255) NOT NULL,
+                        applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE KEY uq_schema_migrations_filename (filename)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+                await cursor.execute("SELECT version FROM schema_migrations")
+                applied = {row[0] for row in await cursor.fetchall()}
+                seen_versions: set[int] = set()
+                for path in files:
+                    version = int(path.name.split("_", 1)[0])
+                    if version in seen_versions:
+                        raise RuntimeError(f"Duplicate migration version detected: {version}")
+                    seen_versions.add(version)
+                    if version in applied:
+                        continue
+                    sql = path.read_text(encoding="utf-8").strip()
+                    if not sql:
+                        continue
+                    await cursor.execute(sql)
+                    await cursor.execute(
+                        "INSERT INTO schema_migrations (version,filename) VALUES (%s,%s)",
+                        (version, path.name),
+                    )
+        finally:
+            if lock_acquired:
+                async with connection.cursor() as cursor:
+                    await cursor.execute("SELECT RELEASE_LOCK('shulelink:schema-migrations')")
