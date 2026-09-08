@@ -1,5 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
+import { COOKIE_AUTH_MODE } from "../api/client";
 import { login as loginRequest, logout as logoutRequest, me as meRequest } from "../api/auth";
 
 const ACCESS_KEY = "shulelink_access_token";
@@ -11,15 +12,22 @@ function readUser() {
 }
 
 export const useAuthStore = defineStore("auth", () => {
-  const accessToken = ref(localStorage.getItem(ACCESS_KEY));
-  const refreshToken = ref(localStorage.getItem(REFRESH_KEY));
+  const accessToken = ref(COOKIE_AUTH_MODE ? null : localStorage.getItem(ACCESS_KEY));
+  const refreshToken = ref(COOKIE_AUTH_MODE ? null : localStorage.getItem(REFRESH_KEY));
   const user = ref(readUser());
   const loading = ref(false);
 
-  const isAuthenticated = computed(() => Boolean(accessToken.value && refreshToken.value));
+  const isAuthenticated = computed(() => COOKIE_AUTH_MODE ? Boolean(user.value) : Boolean(accessToken.value && refreshToken.value));
   const isPlatform = computed(() => user.value?.user_type === "platform");
 
   function persistTokens(data) {
+    if (COOKIE_AUTH_MODE) {
+      accessToken.value = null;
+      refreshToken.value = null;
+      localStorage.removeItem(ACCESS_KEY);
+      localStorage.removeItem(REFRESH_KEY);
+      return;
+    }
     accessToken.value = data.access_token;
     refreshToken.value = data.refresh_token;
     localStorage.setItem(ACCESS_KEY, data.access_token);
@@ -29,7 +37,9 @@ export const useAuthStore = defineStore("auth", () => {
   async function login(credentials, type) {
     loading.value = true;
     try {
-      persistTokens(await loginRequest(credentials, type));
+      const result = await loginRequest(credentials, type);
+      if (result.mfa_required) return result;
+      persistTokens(result);
       user.value = await meRequest();
       localStorage.setItem(USER_KEY, JSON.stringify(user.value));
       return user.value;
@@ -37,7 +47,6 @@ export const useAuthStore = defineStore("auth", () => {
   }
 
   async function hydrate() {
-    if (!isAuthenticated.value) return null;
     try {
       user.value = await meRequest();
       localStorage.setItem(USER_KEY, JSON.stringify(user.value));
@@ -49,7 +58,7 @@ export const useAuthStore = defineStore("auth", () => {
   }
 
   async function logout() {
-    try { if (refreshToken.value) await logoutRequest(refreshToken.value); } finally { clear(); }
+    try { if (COOKIE_AUTH_MODE || refreshToken.value) await logoutRequest(refreshToken.value); } finally { clear(); }
   }
 
   function clear() {
