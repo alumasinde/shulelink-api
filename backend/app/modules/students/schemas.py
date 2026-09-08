@@ -39,11 +39,14 @@ class StudentCreate(BaseModel):
     medical_notes: str | None = None
     emergency_notes: str | None = None
 
-    @field_validator("admission_number", "first_name", "last_name", mode="before")
+    @field_validator("admission_number", mode="before")
+    @classmethod
+    def trim_admission_number(cls, value):
+        return clean(value)
+
+    @field_validator("first_name", "last_name", mode="before")
     @classmethod
     def trim_required(cls, value):
-        if value is None and cls.model_fields.get("admission_number"):
-            return None
         if not isinstance(value, str) or not value.strip():
             raise ValueError("value cannot be empty")
         return value.strip()
