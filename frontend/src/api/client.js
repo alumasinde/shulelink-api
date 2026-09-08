@@ -1,14 +1,16 @@
 import axios from "axios";
 
-const configuredApi = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
 const host = window.location.hostname;
 const isPlatformHost = host === "admin.localhost" || host === "admin.shulelink.co.ke" || host === "localhost" || host === "127.0.0.1";
+const configuredApi = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
 
 function resolveApiBase() {
-  if (configuredApi) return configuredApi;
+  // Local development is host-aware. Never send platform/tenant requests to
+  // 127.0.0.1 because the backend uses the Host header to resolve tenancy.
   if (host.endsWith(".localhost")) return `${window.location.protocol}//${host}:8000/api/v1`;
   if (host.endsWith(".shulelink.co.ke")) return `${window.location.protocol}//${host}/api/v1`;
-  return isPlatformHost ? `${window.location.protocol}//admin.localhost:8000/api/v1` : `${window.location.protocol}//${host}:8000/api/v1`;
+  if (isPlatformHost) return `${window.location.protocol}//admin.localhost:8000/api/v1`;
+  return configuredApi || `${window.location.protocol}//${host}:8000/api/v1`;
 }
 
 export const API_BASE_URL = resolveApiBase();
