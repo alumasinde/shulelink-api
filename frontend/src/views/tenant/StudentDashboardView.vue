@@ -2,78 +2,21 @@
 import { computed, onMounted, ref } from 'vue'
 import { api, getApiError } from '../../api/client'
 import { useAuthStore } from '../../stores/auth'
-
-const auth = useAuthStore()
-const data = ref(null)
-const loading = ref(true)
-const error = ref('')
-const firstName = computed(() => data.value?.profile?.first_name || auth.user?.first_name || 'there')
-const profile = computed(() => data.value?.profile || {})
-const fullName = computed(() => [profile.value.first_name, profile.value.middle_name, profile.value.last_name].filter(Boolean).join(' '))
-
-async function load() {
-  loading.value = true
-  error.value = ''
-  try { data.value = (await api.get('/portal/me')).data }
-  catch (e) { error.value = getApiError(e, 'Unable to load your student portal.') }
-  finally { loading.value = false }
-}
-
+const auth = useAuthStore(); const data = ref(null); const loading = ref(true); const error = ref('')
+const profile = computed(() => data.value?.profile || {}); const enrollment = computed(() => profile.value.enrollment || null)
+const firstName = computed(() => profile.value.first_name || auth.user?.first_name || 'there')
+const fullName = computed(() => [profile.value.first_name,profile.value.middle_name,profile.value.last_name].filter(Boolean).join(' '))
+async function load(){loading.value=true;error.value='';try{data.value=(await api.get('/student-portal/me')).data}catch(e){error.value=getApiError(e,'Unable to load your student portal.')}finally{loading.value=false}}
 onMounted(load)
 </script>
-
 <template>
-  <div class="dashboard-page role-dashboard">
-    <div v-if="loading" class="dashboard-loading"><div class="spinner-border text-primary" role="status"></div><span>Loading your student portal...</span></div>
-    <template v-else>
-      <section class="dashboard-heading">
-        <div><div class="eyebrow">STUDENT PORTAL</div><h1>Good day, {{ firstName }} <span class="wave">👋</span></h1><p>Your personal school and learning workspace.</p></div>
-        <div class="heading-actions"><span class="role-badge"><i class="bi bi-mortarboard me-2"></i>Student account</span></div>
-      </section>
-
-      <div v-if="error" class="alert alert-danger border-0 shadow-sm mb-4"><i class="bi bi-exclamation-circle me-2"></i>{{ error }}</div>
-
-      <section class="welcome-banner student-banner mb-4">
-        <div class="welcome-copy"><div class="banner-label"><i class="bi bi-mortarboard-fill me-2"></i>MY SCHOOL</div><h2>Welcome, {{ firstName }}</h2><p>Your ShuleLink student dashboard keeps your school information and learning services in one place.</p></div>
-        <div class="welcome-art"><i class="bi bi-mortarboard-fill"></i></div>
-      </section>
-
-      <section class="metric-grid mb-4">
-        <div class="metric-card"><div class="metric-icon"><i class="bi bi-person-badge"></i></div><div><span>Admission No.</span><strong class="metric-value">{{ profile.admission_number || '—' }}</strong><small>Student identifier</small></div></div>
-        <div class="metric-card"><div class="metric-icon"><i class="bi bi-person-check"></i></div><div><span>Status</span><strong class="text-capitalize">{{ profile.status || '—' }}</strong><small>Current account status</small></div></div>
-        <div class="metric-card"><div class="metric-icon"><i class="bi bi-journal-bookmark"></i></div><div><span>Academics</span><strong>—</strong><small>Coming soon</small></div></div>
-        <div class="metric-card"><div class="metric-icon"><i class="bi bi-calendar-check"></i></div><div><span>Attendance</span><strong>—</strong><small>Coming soon</small></div></div>
-      </section>
-
-      <div class="row g-4">
-        <div class="col-xl-7">
-          <section class="dashboard-card h-100">
-            <div class="card-heading"><div><h2>My Profile</h2><p>Your school record as available to your student account.</p></div></div>
-            <div class="profile-grid">
-              <div><span>Full name</span><strong>{{ fullName || '—' }}</strong></div>
-              <div><span>Admission number</span><strong>{{ profile.admission_number || '—' }}</strong></div>
-              <div><span>Date of birth</span><strong>{{ profile.date_of_birth || '—' }}</strong></div>
-              <div><span>Gender</span><strong class="text-capitalize">{{ profile.gender || '—' }}</strong></div>
-              <div><span>Status</span><strong class="text-capitalize">{{ profile.status || '—' }}</strong></div>
-            </div>
-          </section>
-        </div>
-        <div class="col-xl-5">
-          <section class="dashboard-card h-100">
-            <div class="card-heading"><div><h2>My learning</h2><p>Student services will appear here.</p></div></div>
-            <div class="parent-service"><span><i class="bi bi-journal-text"></i></span><div><strong>Subjects & Timetable</strong><small>Coming soon</small></div><i class="bi bi-lock text-muted"></i></div>
-            <div class="parent-service"><span><i class="bi bi-clipboard-data"></i></span><div><strong>Examinations & Results</strong><small>Coming soon</small></div><i class="bi bi-lock text-muted"></i></div>
-            <div class="parent-service"><span><i class="bi bi-calendar-check"></i></span><div><strong>Attendance</strong><small>Coming soon</small></div><i class="bi bi-lock text-muted"></i></div>
-            <div class="parent-service"><span><i class="bi bi-megaphone"></i></span><div><strong>School Notices</strong><small>Coming soon</small></div><i class="bi bi-lock text-muted"></i></div>
-          </section>
-        </div>
-      </div>
-
-      <section class="dashboard-footer mt-4"><div><i class="bi bi-shield-check"></i><span><strong>Private student workspace</strong><small>Your dashboard is restricted to your own student record.</small></span></div><router-link to="/school/portal">My Portal <i class="bi bi-arrow-right ms-1"></i></router-link></section>
-    </template>
-  </div>
-</template>
-
-<style scoped>
-.role-badge{display:inline-flex;align-items:center;padding:.65rem .9rem;border:1px solid #dce8fb;background:#f8fbff;border-radius:.7rem;color:#0d6efd;font-weight:600}.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.profile-grid>div{border:1px solid #edf0f3;border-radius:.7rem;padding:.9rem}.profile-grid span{display:block;color:#6c757d;font-size:.78rem;margin-bottom:.25rem}.profile-grid strong{display:block;word-break:break-word}.parent-service{display:flex;align-items:center;gap:.8rem;padding:1rem 0;border-bottom:1px solid #edf0f3}.parent-service:last-child{border-bottom:0}.parent-service>span{width:40px;height:40px;border-radius:.65rem;background:#eef5ff;color:#0d6efd;display:flex;align-items:center;justify-content:center}.parent-service>div{display:flex;flex-direction:column;flex:1}.parent-service small{color:#6c757d}.metric-value{font-size:1rem!important;word-break:break-all}.student-banner .welcome-art{opacity:.25}@media(max-width:576px){.profile-grid{grid-template-columns:1fr}}
-</style>
+<div class="dashboard-page role-dashboard">
+<div v-if="loading" class="dashboard-loading"><div class="spinner-border text-primary"></div><span>Loading your student portal...</span></div>
+<template v-else><section class="dashboard-heading"><div><div class="eyebrow">STUDENT PORTAL</div><h1>Good day, {{firstName}} <span class="wave">👋</span></h1><p>Your personal school and learning workspace.</p></div><div class="heading-actions"><span class="role-badge"><i class="bi bi-mortarboard me-2"></i>Student account</span></div></section>
+<div v-if="error" class="alert alert-danger border-0 shadow-sm mb-4"><i class="bi bi-exclamation-circle me-2"></i>{{error}}</div>
+<section v-if="!error" class="welcome-banner student-banner mb-4"><div class="welcome-copy"><div class="banner-label"><i class="bi bi-mortarboard-fill me-2"></i>MY SCHOOL</div><h2>Welcome, {{firstName}}</h2><p>Your ShuleLink student dashboard keeps your school information and learning services in one place.</p></div><div class="welcome-art"><i class="bi bi-mortarboard-fill"></i></div></section>
+<template v-if="!error"><section class="metric-grid mb-4"><div class="metric-card"><div class="metric-icon"><i class="bi bi-person-badge"></i></div><div><span>Admission No.</span><strong class="metric-value">{{profile.admission_number}}</strong><small>Student identifier</small></div></div><div class="metric-card"><div class="metric-icon"><i class="bi bi-person-check"></i></div><div><span>Status</span><strong class="text-capitalize">{{profile.status}}</strong><small>Student record status</small></div></div><div class="metric-card"><div class="metric-icon"><i class="bi bi-collection"></i></div><div><span>Class</span><strong>{{enrollment?.class?.name || '—'}}</strong><small>{{enrollment?.stream?.name || 'No stream assigned'}}</small></div></div><div class="metric-card"><div class="metric-icon"><i class="bi bi-calendar3"></i></div><div><span>Academic Year</span><strong>{{enrollment?.academic_year?.name || '—'}}</strong><small>Current enrollment</small></div></div></section>
+<div class="row g-4"><div class="col-xl-7"><section class="dashboard-card h-100"><div class="card-heading"><div><h2>My Profile</h2><p>Your school record.</p></div></div><div class="profile-grid"><div><span>Full name</span><strong>{{fullName || '—'}}</strong></div><div><span>Admission number</span><strong>{{profile.admission_number || '—'}}</strong></div><div><span>Date of birth</span><strong>{{profile.date_of_birth || '—'}}</strong></div><div><span>Gender</span><strong class="text-capitalize">{{profile.gender || '—'}}</strong></div><div><span>Nationality</span><strong>{{profile.nationality || '—'}}</strong></div><div><span>Admission date</span><strong>{{profile.admission_date || '—'}}</strong></div></div></section></div><div class="col-xl-5"><section class="dashboard-card h-100"><div class="card-heading"><div><h2>My learning</h2><p>Student services.</p></div></div><div class="parent-service"><span><i class="bi bi-journal-text"></i></span><div><strong>Subjects & Timetable</strong><small>Coming soon</small></div><i class="bi bi-lock text-muted"></i></div><div class="parent-service"><span><i class="bi bi-clipboard-data"></i></span><div><strong>Examinations & Results</strong><small>Coming soon</small></div><i class="bi bi-lock text-muted"></i></div><div class="parent-service"><span><i class="bi bi-calendar-check"></i></span><div><strong>Attendance</strong><small>Coming soon</small></div><i class="bi bi-lock text-muted"></i></div><div class="parent-service"><span><i class="bi bi-megaphone"></i></span><div><strong>School Notices</strong><small>Coming soon</small></div><i class="bi bi-lock text-muted"></i></div></section></div></div>
+<section class="dashboard-footer mt-4"><div><i class="bi bi-shield-check"></i><span><strong>Private student workspace</strong><small>Your dashboard is restricted to your own student record.</small></span></div><router-link to="/school/portal">My Portal <i class="bi bi-arrow-right ms-1"></i></router-link></section></template></template></template>
+</div></template>
+<style scoped>.role-badge{display:inline-flex;align-items:center;padding:.65rem .9rem;border:1px solid #dce8fb;background:#f8fbff;border-radius:.7rem;color:#0d6efd;font-weight:600}.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.profile-grid>div{border:1px solid #edf0f3;border-radius:.7rem;padding:.9rem}.profile-grid span{display:block;color:#6c757d;font-size:.78rem;margin-bottom:.25rem}.profile-grid strong{display:block;word-break:break-word}.parent-service{display:flex;align-items:center;gap:.8rem;padding:1rem 0;border-bottom:1px solid #edf0f3}.parent-service:last-child{border-bottom:0}.parent-service>span{width:40px;height:40px;border-radius:.65rem;background:#eef5ff;color:#0d6efd;display:flex;align-items:center;justify-content:center}.parent-service>div{display:flex;flex-direction:column;flex:1}.parent-service small{color:#6c757d}.metric-value{font-size:1rem!important;word-break:break-all}.student-banner .welcome-art{opacity:.25}@media(max-width:576px){.profile-grid{grid-template-columns:1fr}}</style>
