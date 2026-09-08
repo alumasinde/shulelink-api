@@ -10,7 +10,6 @@ from app.modules.auth.hardening_service import (
     create_mfa_challenge,
     ensure_not_throttled,
     issue_session,
-    mfa_enabled,
     record_login_failure,
 )
 
@@ -29,7 +28,10 @@ async def login_user(email: str, password: str, user_type: str, tenant_id: UUID 
         try:
             await conn.begin()
             async with conn.cursor() as cur:
-                await cur.execute(f"SELECT id,email,first_name,last_name,password_hash,status FROM {table} WHERE email=%s LIMIT 1", (normalized,))
+                if user_type == "tenant":
+                    await cur.execute(f"SELECT id,email,first_name,last_name,password_hash,status FROM {table} WHERE email=%s OR login_identifier=%s LIMIT 1", (normalized, normalized))
+                else:
+                    await cur.execute(f"SELECT id,email,first_name,last_name,password_hash,status FROM {table} WHERE email=%s LIMIT 1", (normalized,))
                 user = await cur.fetchone()
                 if not user or user[5] != "active" or not verify_password(password, user[4]):
                     await conn.rollback()
@@ -48,8 +50,8 @@ async def login_user(email: str, password: str, user_type: str, tenant_id: UUID 
                 await cur.execute("SELECT 1 FROM mfa_factors WHERE user_type=%s AND user_id=%s AND factor_type='totp' AND enabled=1 LIMIT 1", (user_type,str(user[0])))
                 has_mfa = bool(await cur.fetchone())
                 if has_mfa:
-                    challenge_id = await create_mfa_challenge(user_type, UUID(str(user[0])), tenant_id)
                     await conn.rollback()
+                    challenge_id = await create_mfa_challenge(user_type, UUID(str(user[0])), tenant_id)
                     await clear_login_throttle(user_type, normalized)
                     return {"mfa_required": True, "mfa_challenge_id": challenge_id, "access_token": None, "refresh_token": None, "expires_at": None}
 
@@ -84,7 +86,7 @@ async def refresh_session(refresh_token: str):
             if not user or user[0] != "active":
                 raise HTTPException(status_code=401, detail="User account is not active")
             if session[4]:
-                await cur.execute("SELECT expires_at,revoked_at FROM tenant_access_sessions WHERE id=%s", (str(session[4]),))
+                await cur.execute("SELECT expires_at,revoked_at FROM tenant_access_sessions WHERE id=%s", (str(session[4],)))
                 access_session = await cur.fetchone()
                 if not access_session or access_session[1] is not None or access_session[0] <= now:
                     raise HTTPException(status_code=401, detail="Tenant access session is no longer active")
