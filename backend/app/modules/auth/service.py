@@ -1,36 +1,72 @@
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import UUID
+
 from fastapi import HTTPException, status
+
 from app.core.database import get_pool
 from app.core.security import create_access_token, create_refresh_token, hash_token, verify_password
+from app.modules.auth.hardening_service import (
+    clear_login_throttle,
+    create_mfa_challenge,
+    ensure_not_throttled,
+    issue_session,
+    mfa_enabled,
+    record_login_failure,
+)
+
 
 def _unauthorized() -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
 
 async def login_user(email: str, password: str, user_type: str, tenant_id: UUID | None = None):
     pool = get_pool()
     table = "platform_users" if user_type == "platform" else "tenant_users"
     normalized = email.lower().strip()
+    await ensure_not_throttled(user_type, normalized)
+
     async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(f"SELECT id,email,first_name,last_name,password_hash,status FROM {table} WHERE email=%s LIMIT 1", (normalized,))
-            user = await cur.fetchone()
-            if not user or user[5] != "active" or not verify_password(password, user[4]):
-                raise _unauthorized()
-            if user_type == "tenant":
-                if tenant_id is None:
-                    raise HTTPException(status_code=400, detail="Tenant context is required")
-                await cur.execute("SELECT 1 FROM tenant_memberships WHERE tenant_id=%s AND tenant_user_id=%s AND status='active' LIMIT 1", (str(tenant_id),str(user[0])))
-                if not await cur.fetchone():
+        try:
+            await conn.begin()
+            async with conn.cursor() as cur:
+                await cur.execute(f"SELECT id,email,first_name,last_name,password_hash,status FROM {table} WHERE email=%s LIMIT 1", (normalized,))
+                user = await cur.fetchone()
+                if not user or user[5] != "active" or not verify_password(password, user[4]):
+                    await conn.rollback()
+                    await record_login_failure(user_type, normalized)
                     raise _unauthorized()
-            session_id = uuid4()
-            refresh_raw, refresh_hash, refresh_expires = create_refresh_token()
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
-            await cur.execute("INSERT INTO auth_sessions (id,user_type,user_id,tenant_id,refresh_token_hash,expires_at,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)", (str(session_id),user_type,str(user[0]),str(tenant_id) if tenant_id else None,refresh_hash,refresh_expires.replace(tzinfo=None),now))
-            access, access_expires = create_access_token(user_id=str(user[0]),user_type=user_type,tenant_id=str(tenant_id) if tenant_id else None,session_id=str(session_id))
-            await cur.execute(f"UPDATE {table} SET last_login_at=%s WHERE id=%s", (now,str(user[0])))
-            await cur.execute("INSERT INTO identity_audit_log (actor_type,actor_id,tenant_id,action,target_type,target_id) VALUES (%s,%s,%s,'auth.login',%s,%s)", (user_type,str(user[0]),str(tenant_id) if tenant_id else None,user_type,str(user[0])))
-            return access, refresh_raw, access_expires
+                if user_type == "tenant":
+                    if tenant_id is None:
+                        await conn.rollback()
+                        raise HTTPException(status_code=400, detail="Tenant context is required")
+                    await cur.execute("SELECT 1 FROM tenant_memberships WHERE tenant_id=%s AND tenant_user_id=%s AND status='active' LIMIT 1", (str(tenant_id),str(user[0])))
+                    if not await cur.fetchone():
+                        await conn.rollback()
+                        await record_login_failure(user_type, normalized)
+                        raise _unauthorized()
+
+                await cur.execute("SELECT 1 FROM mfa_factors WHERE user_type=%s AND user_id=%s AND factor_type='totp' AND enabled=1 LIMIT 1", (user_type,str(user[0])))
+                has_mfa = bool(await cur.fetchone())
+                if has_mfa:
+                    challenge_id = await create_mfa_challenge(user_type, UUID(str(user[0])), tenant_id)
+                    await conn.rollback()
+                    await clear_login_throttle(user_type, normalized)
+                    return {"mfa_required": True, "mfa_challenge_id": challenge_id, "access_token": None, "refresh_token": None, "expires_at": None}
+
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                access, refresh_raw, access_expires, _ = await issue_session(conn, user_type, UUID(str(user[0])), tenant_id)
+                await cur.execute(f"UPDATE {table} SET last_login_at=%s WHERE id=%s", (now,str(user[0])))
+                await cur.execute("INSERT INTO identity_audit_log (actor_type,actor_id,tenant_id,action,target_type,target_id) VALUES (%s,%s,%s,'auth.login',%s,%s)", (user_type,str(user[0]),str(tenant_id) if tenant_id else None,user_type,str(user[0])))
+                await conn.commit()
+                await clear_login_throttle(user_type, normalized)
+                return {"access_token": access, "refresh_token": refresh_raw, "expires_at": access_expires, "mfa_required": False, "mfa_challenge_id": None}
+        except Exception:
+            try:
+                await conn.rollback()
+            except Exception:
+                pass
+            raise
+
 
 async def refresh_session(refresh_token: str):
     pool = get_pool()
@@ -56,6 +92,7 @@ async def refresh_session(refresh_token: str):
             await cur.execute("UPDATE auth_sessions SET refresh_token_hash=%s,expires_at=%s,last_used_at=%s WHERE id=%s", (new_hash,new_expires.replace(tzinfo=None),now,str(session[0])))
             access, access_expires = create_access_token(user_id=str(session[2]),user_type=session[1],tenant_id=str(session[3]) if session[3] else None,session_id=str(session[0]),access_session_id=str(session[4]) if session[4] else None)
             return access,new_raw,access_expires
+
 
 async def logout_session(refresh_token: str | None, session_id: UUID | None):
     pool = get_pool()
