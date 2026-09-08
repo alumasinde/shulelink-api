@@ -1,5 +1,5 @@
 from datetime import date
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PortalAcademicContext(BaseModel):
@@ -12,19 +12,10 @@ class PortalEnrollment(BaseModel):
     enrollment_date: date | None = None
     status: str | None = None
     academic_year: PortalAcademicContext | None = None
-    class_: PortalAcademicContext | None = None
+    class_: PortalAcademicContext | None = Field(default=None, alias="class")
     stream: PortalAcademicContext | None = None
 
     model_config = {"populate_by_name": True}
-
-    @classmethod
-    def from_mapping(cls, value):
-        if value is None:
-            return None
-        return cls(
-            id=value.get("id"), enrollment_date=value.get("enrollment_date"), status=value.get("status"),
-            academic_year=value.get("academic_year"), class_=value.get("class"), stream=value.get("stream")
-        )
 
 
 class StudentPortalProfile(BaseModel):
@@ -81,4 +72,4 @@ class ParentPortalProfile(BaseModel):
 class ParentPortalResponse(BaseModel):
     portal: str = "parent"
     profile: ParentPortalProfile
-    children: list[ParentChild] = []
+    children: list[ParentChild] = Field(default_factory=list)
