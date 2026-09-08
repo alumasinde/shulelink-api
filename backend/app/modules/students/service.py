@@ -4,8 +4,11 @@ from datetime import date
 from uuid import UUID, uuid4
 from fastapi import HTTPException
 from app.core.database import get_pool
+from app.modules.students.admission import next_admission_number
 
 STUDENT_COLUMNS = "id,tenant_id,admission_number,first_name,middle_name,last_name,date_of_birth,gender,nationality,birth_certificate_number,admission_date,previous_school,photo_url,status,medical_notes,emergency_notes"
+STUDENT_SELECT = STUDENT_COLUMNS + ", (SELECT cl.name FROM student_enrollments e JOIN class_levels cl ON cl.id=e.class_level_id WHERE e.student_id=students.id AND e.tenant_id=students.tenant_id AND e.status='active' ORDER BY e.enrollment_date DESC LIMIT 1) AS current_class_name, (SELECT s.name FROM student_enrollments e JOIN streams s ON s.id=e.stream_id WHERE e.student_id=students.id AND e.tenant_id=students.tenant_id AND e.status='active' AND e.stream_id IS NOT NULL ORDER BY e.enrollment_date DESC LIMIT 1) AS current_stream_name"
+STUDENT_KEYS = STUDENT_COLUMNS.split(",") + ["current_class_name", "current_stream_name"]
 GUARDIAN_COLUMNS = "id,tenant_id,first_name,last_name,phone,alternative_phone,email,address,occupation,employer,preferred_contact_method,status"
 
 
@@ -18,8 +21,7 @@ def _bool(value):
 
 
 def _student(row):
-    keys = STUDENT_COLUMNS.split(",")
-    d = dict(zip(keys, row))
+    d = dict(zip(STUDENT_KEYS, row))
     for key in ("id", "tenant_id"):
         d[key] = _str(d[key])
     d["is_active"] = d["status"] == "active"
@@ -44,17 +46,17 @@ async def _one(query, args=()):
 
 async def list_students(tenant_id: UUID, search: str | None = None, status: str | None = None, limit: int = 50, offset: int = 0):
     pool = get_pool()
-    where = ["tenant_id=%s"]
+    where = ["students.tenant_id=%s"]
     args = [str(tenant_id)]
     if search:
-        where.append("(admission_number LIKE %s OR first_name LIKE %s OR middle_name LIKE %s OR last_name LIKE %s)")
+        where.append("(students.admission_number LIKE %s OR students.first_name LIKE %s OR students.middle_name LIKE %s OR students.last_name LIKE %s)")
         term = f"%{search.strip()}%"
         args.extend([term] * 4)
     if status:
-        where.append("status=%s")
+        where.append("students.status=%s")
         args.append(status)
     args.extend([limit, offset])
-    sql = f"SELECT {STUDENT_COLUMNS} FROM students WHERE {' AND '.join(where)} ORDER BY last_name,first_name,admission_number LIMIT %s OFFSET %s"
+    sql = f"SELECT {STUDENT_SELECT} FROM students WHERE {' AND '.join(where)} ORDER BY students.last_name,students.first_name,students.admission_number LIMIT %s OFFSET %s"
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(sql, args)
@@ -69,8 +71,10 @@ async def count_students(tenant_id: UUID):
 
 async def create_student(tenant_id: UUID, data: dict):
     item_id = uuid4()
+    admission_date = data.get("admission_date")
+    admission_number = await next_admission_number(tenant_id, admission_date)
     fields = ["admission_number","first_name","middle_name","last_name","date_of_birth","gender","nationality","birth_certificate_number","admission_date","previous_school","photo_url","status","medical_notes","emergency_notes"]
-    values = [str(item_id), str(tenant_id)] + [data.get(f) for f in fields]
+    values = [str(item_id), str(tenant_id), admission_number] + [data.get(f) for f in fields[1:]]
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
@@ -84,7 +88,7 @@ async def create_student(tenant_id: UUID, data: dict):
 
 
 async def get_student(tenant_id: UUID, student_id: UUID):
-    row = await _one(f"SELECT {STUDENT_COLUMNS} FROM students WHERE id=%s AND tenant_id=%s", (str(student_id), str(tenant_id)))
+    row = await _one(f"SELECT {STUDENT_SELECT} FROM students WHERE students.id=%s AND students.tenant_id=%s", (str(student_id), str(tenant_id)))
     if not row:
         raise HTTPException(404, "Student not found")
     return _student(row)
@@ -108,6 +112,16 @@ async def update_student(tenant_id: UUID, student_id: UUID, data: dict):
                     raise HTTPException(404, "Student not found")
     except HTTPException:
         raise
+    return await get_student(tenant_id, student_id)
+
+
+async def set_student_photo(tenant_id: UUID, student_id: UUID, photo_url: str):
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("UPDATE students SET photo_url=%s WHERE id=%s AND tenant_id=%s", (photo_url, str(student_id), str(tenant_id)))
+            if cur.rowcount == 0:
+                raise HTTPException(404, "Student not found")
     return await get_student(tenant_id, student_id)
 
 
