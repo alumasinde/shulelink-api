@@ -7,17 +7,23 @@ import { useAuthStore } from "../../stores/auth";
 const auth = useAuthStore();
 const router = useRouter();
 const route = useRoute();
-const email = ref("");
+const identifier = ref("");
 const password = ref("");
 const error = ref("");
 const showPassword = ref(false);
 const isPlatform = computed(() => ["admin.localhost", "admin.shulelink.co.ke", "localhost", "127.0.0.1"].includes(window.location.hostname));
 
+function portalPath(user) {
+  if (user?.user_type === "platform") return "/platform";
+  const paths = { "school-admin": "/school/portal", registrar: "/school/portal", finance: "/school/portal", teacher: "/school/portal", parent: "/school/portal", student: "/school/portal" };
+  return paths[user?.portal] || "/school/portal";
+}
+
 async function submit() {
   error.value = "";
   try {
-    await auth.login({ email: email.value.trim(), password: password.value }, isPlatform.value ? "platform" : "tenant");
-    router.replace(route.query.redirect || (isPlatform.value ? "/platform" : "/school"));
+    await auth.login({ email: identifier.value.trim(), password: password.value }, isPlatform.value ? "platform" : "tenant");
+    router.replace(route.query.redirect || portalPath(auth.user));
   } catch (err) { error.value = getApiError(err, "Unable to sign in. Check your credentials and try again."); }
 }
 </script>
@@ -37,10 +43,10 @@ async function submit() {
       </div>
 
       <form @submit.prevent="submit" novalidate>
-        <label class="form-label">Email address</label>
+        <label class="form-label">Email or login ID</label>
         <div class="input-group mb-3">
-          <span class="input-group-text bg-white"><i class="bi bi-envelope"></i></span>
-          <input v-model="email" class="form-control" type="email" autocomplete="username" required placeholder="you@example.com">
+          <span class="input-group-text bg-white"><i class="bi bi-person"></i></span>
+          <input v-model="identifier" class="form-control" type="text" autocomplete="username" required placeholder="you@example.com or student-ADM-2026-0001">
         </div>
         <label class="form-label">Password</label>
         <div class="input-group mb-4">
