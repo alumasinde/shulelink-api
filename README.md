@@ -1,57 +1,45 @@
-# ShuleLink
+# Phase 2 — Identity + Multi-tenancy
 
-ShuleLink is a multi-tenant school management SaaS for schools in Kenya.
+Phase 2 adds the identity and tenant boundary used by all future ShuleLink modules.
 
-## Phase 1 — Foundation
+## Identity model
+- `platform_users`: ShuleLink staff/admin accounts; never carry `tenant_id`.
+- `tenant_users`: reusable user identities for school users.
+- `tenant_memberships`: connects a tenant user to one or more schools.
+- Platform and tenant roles/permissions are separate.
+- Refresh tokens are stored only as SHA-256 hashes.
+- Access tokens are short-lived JWTs; refresh tokens rotate on use.
+- Sessions and privileged tenant access are revocable.
 
-Phase 1 establishes the production-oriented application foundation:
+## Tenant model
+- `tenants` is the central tenant catalog.
+- `tenant_domains` maps hostnames to tenants.
+- Shared tenants use the central database.
+- Dedicated tenants are represented in the catalog and are resolved by the tenant database manager; unprovisioned dedicated tenants fail closed.
+- Tenant business tables must retain `tenant_id` even when a dedicated database is used.
+- Tenant context is resolved from the request hostname, not an arbitrary client-supplied tenant id.
 
-- FastAPI backend
-- Vue 3 frontend with Bootstrap 5
-- MySQL with raw SQL migrations
-- API versioning under `/api/v1`
-- Environment-based configuration
-- Structured application logging
-- Consistent API error responses
-- CORS and trusted-host configuration
-- Health/readiness endpoints
-- Tenant-aware architecture hooks for later phases
-- Basic automated backend tests
+## Platform access to a tenant
+A platform user cannot silently impersonate a school. They must create a short-lived, reason-coded `tenant_access_session`. The resulting token carries that access-session id and every start/revoke action is audited.
 
-## Repository Layout
+## Local bootstrap
+After running migrations, create the first platform administrator:
 
-```text
-backend/     FastAPI application and SQL migrations
-frontend/    Vue 3 application
+```powershell
+python scripts/create_platform_admin.py --email admin@example.com --first-name Admin --last-name User
 ```
 
-## Local Development
+For local tenant testing, tenants use `<slug>.localhost` (for example `demo.localhost`).
 
-### Backend
-
-```bash
-cd backend
-python -m venv .venv
-# Windows: .venv\\Scripts\\activate
-# Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Copy `.env.example` to `.env` and configure MySQL before starting the API.
-
-## API
-
-- Health: `GET /api/v1/health`
-- Readiness: `GET /api/v1/health/ready`
-- OpenAPI: `/docs`
-
-The Phase 1 API intentionally contains no school business domain or user identity data. Those are introduced in later phases.
+## Phase 2 endpoints
+- `POST /api/v1/auth/platform/login`
+- `POST /api/v1/auth/login` on a tenant hostname
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+- `POST /api/v1/auth/platform/tenant-access`
+- `DELETE /api/v1/auth/platform/tenant-access/{access_id}`
+- `POST /api/v1/tenants`
+- `GET /api/v1/tenants`
+- `POST /api/v1/tenants/{tenant_id}/users`
+- `GET /api/v1/tenant/context` on an authenticated tenant hostname

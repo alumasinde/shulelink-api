@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     app_name: str = "ShuleLink"
     app_env: str = "development"
     debug: bool = False
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
     api_v1_prefix: str = "/api/v1"
 
     db_host: str = "127.0.0.1"
@@ -19,9 +19,17 @@ class Settings(BaseSettings):
     db_pool_max_size: int = Field(default=10, ge=1)
 
     cors_origins: str = "http://localhost:5173"
-    trusted_hosts: str = "localhost,127.0.0.1"
+    trusted_hosts: str = "localhost,127.0.0.1,*.localhost"
     max_request_body_bytes: int = Field(default=10 * 1024 * 1024, ge=1024)
     log_level: str = "INFO"
+
+    jwt_secret_key: str = "change-this-in-production"
+    jwt_algorithm: str = "HS256"
+    access_token_minutes: int = Field(default=15, ge=5, le=60)
+    refresh_token_days: int = Field(default=30, ge=1, le=90)
+    password_min_length: int = Field(default=10, ge=8, le=128)
+    platform_admin_host: str = "admin.shulelink.co.ke"
+    root_domain: str = "shulelink.co.ke"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
