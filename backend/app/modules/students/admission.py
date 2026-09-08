@@ -91,11 +91,12 @@ async def save_admission_number_settings(tenant_id: UUID, payload: dict, user_id
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             for key, value in values.items():
+                value_type = "boolean" if key in {"admission_number_include_year", "admission_number_reset_yearly"} else ("integer" if key in {"admission_number_padding", "admission_number_start"} else "string")
                 await cur.execute(
                     """INSERT INTO school_settings (id,tenant_id,setting_key,setting_value,value_type,updated_by)
                        VALUES (UUID(),%s,%s,%s,%s,%s)
                        ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),value_type=VALUES(value_type),updated_by=VALUES(updated_by)""",
-                    (str(tenant_id), key, value, "boolean" if key.endswith("year") or key.endswith("yearly") else ("integer" if key.endswith(("padding", "start")) else "string"), str(user_id)),
+                    (str(tenant_id), key, value, value_type, str(user_id)),
                 )
     return await get_admission_number_settings(tenant_id)
 
@@ -110,18 +111,17 @@ async def next_admission_number(tenant_id: UUID, admission_date: date | None = N
         try:
             async with conn.cursor() as cur:
                 await cur.execute(
+                    "INSERT IGNORE INTO admission_number_sequences (tenant_id,sequence_key,current_number) VALUES (%s,%s,%s)",
+                    (str(tenant_id), sequence_key, settings["start"] - 1),
+                )
+                await cur.execute(
                     "SELECT current_number FROM admission_number_sequences WHERE tenant_id=%s AND sequence_key=%s FOR UPDATE",
                     (str(tenant_id), sequence_key),
                 )
                 row = await cur.fetchone()
                 if row is None:
-                    await cur.execute(
-                        "INSERT INTO admission_number_sequences (tenant_id,sequence_key,current_number) VALUES (%s,%s,%s)",
-                        (str(tenant_id), sequence_key, settings["start"] - 1),
-                    )
-                    current = settings["start"] - 1
-                else:
-                    current = int(row[0])
+                    raise HTTPException(500, "Admission number sequence could not be initialized")
+                current = int(row[0])
 
                 for _ in range(10000):
                     current += 1
