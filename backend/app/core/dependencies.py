@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.config import settings
 from app.core.database import get_pool
 from app.core.security import decode_access_token
 
@@ -20,21 +21,12 @@ class Principal:
     tenant_access_session_id: UUID | None = None
 
 
-async def get_current_principal(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
-) -> Principal:
+async def get_current_principal(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer)) -> Principal:
     if not credentials or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
         payload = decode_access_token(credentials.credentials)
-        principal = Principal(
-            UUID(payload["sub"]),
-            payload["typ"],
-            UUID(payload["tid"]) if payload.get("tid") else None,
-            UUID(payload["sid"]),
-            UUID(payload["tas"]) if payload.get("tas") else None,
-        )
+        principal = Principal(UUID(payload["sub"]), payload["typ"], UUID(payload["tid"]) if payload.get("tid") else None, UUID(payload["sid"]), UUID(payload["tas"]) if payload.get("tas") else None)
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
     if principal.user_type not in {"platform", "tenant"}:
@@ -53,10 +45,7 @@ async def get_current_principal(
             if not session or session[0] is not None or session[1] <= now:
                 raise HTTPException(status_code=401, detail="Session is no longer active")
             if principal.tenant_access_session_id:
-                await cur.execute(
-                    "SELECT tenant_id,expires_at,revoked_at FROM tenant_access_sessions WHERE id=%s AND platform_user_id=%s",
-                    (str(principal.tenant_access_session_id), str(principal.user_id)),
-                )
+                await cur.execute("SELECT tenant_id,expires_at,revoked_at FROM tenant_access_sessions WHERE id=%s AND platform_user_id=%s", (str(principal.tenant_access_session_id), str(principal.user_id)))
                 access = await cur.fetchone()
                 if not access or access[2] is not None or access[1] <= now or str(access[0]) != str(principal.tenant_id):
                     raise HTTPException(status_code=401, detail="Tenant access session is no longer active")
@@ -77,10 +66,7 @@ def require_platform_permission(permission_code: str):
         pool = get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT 1 FROM platform_user_roles ur JOIN platform_role_permissions rp ON rp.platform_role_id=ur.platform_role_id JOIN platform_permissions p ON p.id=rp.platform_permission_id WHERE ur.platform_user_id=%s AND p.code=%s LIMIT 1",
-                    (str(principal.user_id), permission_code),
-                )
+                await cur.execute("SELECT 1 FROM platform_user_roles ur JOIN platform_role_permissions rp ON rp.platform_role_id=ur.platform_role_id JOIN platform_permissions p ON p.id=rp.platform_permission_id WHERE ur.platform_user_id=%s AND p.code=%s LIMIT 1", (str(principal.user_id), permission_code))
                 if not await cur.fetchone():
                     raise HTTPException(status_code=403, detail="Insufficient platform permission")
         return principal
@@ -118,10 +104,7 @@ def require_tenant_permission(permission_code: str):
         pool = get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT 1 FROM tenant_memberships m JOIN tenant_membership_roles mr ON mr.membership_id=m.id JOIN tenant_roles r ON r.id=mr.role_id JOIN tenant_role_permissions rp ON rp.role_id=r.id JOIN tenant_permissions p ON p.id=rp.permission_id WHERE m.tenant_id=%s AND m.tenant_user_id=%s AND m.status='active' AND p.code=%s LIMIT 1",
-                    (str(tenant_id), str(principal.user_id), permission_code),
-                )
+                await cur.execute("SELECT 1 FROM tenant_memberships m JOIN tenant_membership_roles mr ON mr.membership_id=m.id JOIN tenant_roles r ON r.id=mr.role_id JOIN tenant_role_permissions rp ON rp.role_id=r.id JOIN tenant_permissions p ON p.id=rp.permission_id WHERE m.tenant_id=%s AND m.tenant_user_id=%s AND m.status='active' AND p.code=%s LIMIT 1", (str(tenant_id), str(principal.user_id), permission_code))
                 if not await cur.fetchone():
                     raise HTTPException(status_code=403, detail="Insufficient tenant permission")
         return tenant_id
