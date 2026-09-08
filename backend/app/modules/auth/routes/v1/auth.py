@@ -31,7 +31,7 @@ async def tenant_login(request: Request, payload: LoginRequest):
 
 @router.post("/activate", response_model=ActivationResponse)
 @limiter.limit("5/minute")
-async def activate(payload: ActivateAccountRequest):
+async def activate(request: Request, payload: ActivateAccountRequest):
     return ActivationResponse(**await activate_account(payload.token, payload.password))
 
 @router.post("/refresh", response_model=TokenResponse)
