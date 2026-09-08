@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID
 import re
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
@@ -70,7 +70,8 @@ class StudentUpdate(BaseModel):
 class StudentResponse(StudentCreate):
     id: UUID
     is_active: bool = True
-    model_config = ConfigDict(from_attributes=True)
+    current_class_name: str | None = None
+    current_stream_name: str | None = None
 
 
 class GuardianCreate(BaseModel):
@@ -85,7 +86,10 @@ class GuardianCreate(BaseModel):
     preferred_contact_method: str = Field(default="phone", pattern="^(phone|sms|email|whatsapp|any)$")
     status: str = Field(default="active", pattern="^(active|inactive)$")
 
-    _email = field_validator("email")(validate_email)
+    @field_validator("email")
+    @classmethod
+    def email_valid(cls, value):
+        return validate_email(value)
 
 
 class GuardianUpdate(BaseModel):
@@ -100,7 +104,10 @@ class GuardianUpdate(BaseModel):
     preferred_contact_method: str | None = Field(default=None, pattern="^(phone|sms|email|whatsapp|any)$")
     status: str | None = Field(default=None, pattern="^(active|inactive)$")
 
-    _email = field_validator("email")(validate_email)
+    @field_validator("email")
+    @classmethod
+    def email_valid(cls, value):
+        return validate_email(value)
 
 
 class GuardianResponse(GuardianCreate):
@@ -197,6 +204,6 @@ class StudentDocumentResponse(StudentDocumentCreate):
 
 
 class StudentDetailResponse(StudentResponse):
-    guardians: list[StudentGuardianResponse] = []
-    enrollments: list[EnrollmentResponse] = []
-    documents: list[StudentDocumentResponse] = []
+    guardians: list[StudentGuardianResponse] = Field(default_factory=list)
+    enrollments: list[EnrollmentResponse] = Field(default_factory=list)
+    documents: list[StudentDocumentResponse] = Field(default_factory=list)
