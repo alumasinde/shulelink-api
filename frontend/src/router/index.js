@@ -10,6 +10,7 @@ import RolePortalView from "../views/tenant/RolePortalView.vue";
 import SchoolStructureView from "../views/tenant/SchoolStructureView.vue";
 import StudentsView from "../views/tenant/StudentsView.vue";
 import GuardiansView from "../views/tenant/GuardiansView.vue";
+import PortalAccountsView from "../views/tenant/PortalAccountsView.vue";
 
 const isPlatformHost=()=>["admin.localhost","admin.shulelink.co.ke","localhost","127.0.0.1"].includes(window.location.hostname);
 const portalPath=(user)=>user?.user_type==="platform"?"/platform":"/school/portal";
@@ -22,6 +23,7 @@ const router=createRouter({history:createWebHistory(),routes:[
  {path:"/school/structure",name:"school-structure",component:SchoolStructureView,meta:{auth:true,tenant:true}},
  {path:"/school/students",name:"students",component:StudentsView,meta:{auth:true,tenant:true}},
  {path:"/school/guardians",name:"guardians",component:GuardiansView,meta:{auth:true,tenant:true}},
+ {path:"/school/portal-accounts",name:"portal-accounts",component:PortalAccountsView,meta:{auth:true,tenant:true}},
  {path:"/:pathMatch(.*)*",redirect:"/"},
 ]});
 router.beforeEach(async(to)=>{const auth=useAuthStore();if(!auth.user&&auth.isAuthenticated)await auth.hydrate();if(to.meta.guestOnly&&auth.isAuthenticated)return isPlatformHost()?"/platform":portalPath(auth.user);if(to.meta.auth&&!auth.isAuthenticated)return `/login?redirect=${encodeURIComponent(to.fullPath)}`;if(to.meta.platform&&(!isPlatformHost()||!auth.isPlatform))return auth.isAuthenticated?portalPath(auth.user):"/login";if(to.meta.tenant&&isPlatformHost())return auth.isAuthenticated?"/platform":"/login";});
