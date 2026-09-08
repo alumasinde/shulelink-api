@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import settings
+from app.core.cookies import ACCESS_COOKIE
 from app.core.database import get_pool
 from app.core.security import decode_access_token
 
@@ -22,10 +23,13 @@ class Principal:
 
 
 async def get_current_principal(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer)) -> Principal:
-    if not credentials or credentials.scheme.lower() != "bearer":
+    raw_token = credentials.credentials if credentials and credentials.scheme.lower() == "bearer" else None
+    if settings.auth_cookie_mode and not raw_token:
+        raw_token = request.cookies.get(ACCESS_COOKIE)
+    if not raw_token:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
-        payload = decode_access_token(credentials.credentials)
+        payload = decode_access_token(raw_token)
         principal = Principal(UUID(payload["sub"]), payload["typ"], UUID(payload["tid"]) if payload.get("tid") else None, UUID(payload["sid"]), UUID(payload["tas"]) if payload.get("tas") else None)
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
