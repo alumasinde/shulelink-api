@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     db_pool_max_size: int = Field(default=10, ge=1)
 
     cors_origins: str = "http://localhost:5173"
-    trusted_hosts: str = "localhost,127.0.0.1,*.localhost"
+    trusted_hosts: str = "localhost,127.0.0.1,admin.localhost,*.localhost,*.shulelink.co.ke"
     max_request_body_bytes: int = Field(default=10 * 1024 * 1024, ge=1024)
     log_level: str = "INFO"
 
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _split(value: str) -> list[str]:
-        return [item.strip() for item in value.split(",") if item.strip()]
+        return [item.strip().lower() for item in value.split(",") if item.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -43,7 +43,19 @@ class Settings(BaseSettings):
 
     @property
     def trusted_host_list(self) -> list[str]:
-        return self._split(self.trusted_hosts)
+        """Return the complete host allowlist required by ShuleLink routing.
+
+        Local development always supports the platform host and tenant
+        subdomains. Production supports the configured platform host and
+        first-level tenant subdomains under the ShuleLink root domain.
+        Explicit TRUSTED_HOSTS values remain supported for deployments that
+        need additional custom hosts.
+        """
+        hosts = set(self._split(self.trusted_hosts))
+        hosts.update({"localhost", "127.0.0.1", "admin.localhost", "*.localhost"})
+        hosts.add(self.platform_admin_host.lower())
+        hosts.add(f"*.{self.root_domain.lower()}")
+        return sorted(hosts)
 
 
 @lru_cache
