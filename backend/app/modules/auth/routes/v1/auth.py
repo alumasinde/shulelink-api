@@ -29,7 +29,7 @@ async def tenant_login(request: Request, payload: LoginRequest):
 
 @router.post("/refresh", response_model=TokenResponse)
 @limiter.limit("10/minute")
-async def refresh(payload: RefreshRequest):
+async def refresh(request: Request, payload: RefreshRequest):
     access, refresh_token, expires = await refresh_session(payload.refresh_token)
     return TokenResponse(access_token=access, refresh_token=refresh_token, expires_at=expires)
 
