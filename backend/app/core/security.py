@@ -33,7 +33,17 @@ def validate_password(password: str) -> None:
 def create_access_token(*, user_id: str, user_type: str, tenant_id: str | None, session_id: str, access_session_id: str | None = None) -> tuple[str, datetime]:
     now = datetime.now(timezone.utc)
     expires = now + timedelta(minutes=settings.access_token_minutes)
-    payload = {"sub": user_id, "typ": user_type, "tid": tenant_id, "sid": session_id, "jti": str(uuid4()), "iat": now, "exp": expires}
+    payload = {
+        "sub": user_id,
+        "typ": user_type,
+        "tid": tenant_id,
+        "sid": session_id,
+        "jti": str(uuid4()),
+        "iat": now,
+        "exp": expires,
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+    }
     if access_session_id:
         payload["tas"] = access_session_id
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm), expires
@@ -51,4 +61,11 @@ def hash_token(token: str) -> str:
 
 
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    return jwt.decode(
+        token,
+        settings.jwt_secret_key,
+        algorithms=[settings.jwt_algorithm],
+        issuer=settings.jwt_issuer,
+        audience=settings.jwt_audience,
+        options={"require": ["sub", "typ", "sid", "jti", "iat", "exp", "iss", "aud"]},
+    )
