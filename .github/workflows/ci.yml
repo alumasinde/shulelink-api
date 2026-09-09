@@ -32,7 +32,7 @@ jobs:
       DB_WRITE_TIMEOUT_SECONDS: "10"
       CORS_ORIGINS: http://localhost:5173
       CORS_ORIGIN_REGEX: ^https?://([a-z0-9-]+\.)?localhost:5173$
-      TRUSTED_HOSTS: localhost,127.0.0.1,admin.localhost,*.localhost
+      TRUSTED_HOSTS: localhost,127.0.0.1,admin.localhost,*.localhost,testserver
       MAX_REQUEST_BODY_BYTES: "10485760"
       LOG_LEVEL: INFO
       RATE_LIMIT_STORAGE_URI: memory://
