@@ -1,39 +1,47 @@
 import axios from "axios";
 
 const host = window.location.hostname.toLowerCase();
-const configuredApi = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, "");
-const apiPath = import.meta.env.VITE_API_PATH?.trim() || "/api/v1";
+const apiPath = import.meta.env.VITE_API_PATH?.trim();
 const apiPort = import.meta.env.VITE_API_PORT?.trim();
 const platformHost = import.meta.env.VITE_PLATFORM_HOST?.trim().toLowerCase();
 const rootDomain = import.meta.env.VITE_ROOT_DOMAIN?.trim().toLowerCase();
+const developmentDomain = import.meta.env.VITE_DEVELOPMENT_DOMAIN?.trim().toLowerCase();
 const developmentHosts = (import.meta.env.VITE_DEVELOPMENT_HOSTS || "")
   .split(",")
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
+const configuredCookieMode = import.meta.env.VITE_AUTH_COOKIE_MODE;
 
-if (!apiPath.startsWith("/")) {
-  throw new Error("VITE_API_PATH must start with '/'");
+if (!apiPath || !apiPath.startsWith("/")) {
+  throw new Error("VITE_API_PATH is required and must start with '/'");
 }
-if (!platformHost || !rootDomain || !developmentHosts.length) {
-  throw new Error("VITE_PLATFORM_HOST, VITE_ROOT_DOMAIN and VITE_DEVELOPMENT_HOSTS are required");
+if (!platformHost || !rootDomain || !developmentDomain || !developmentHosts.length) {
+  throw new Error(
+    "VITE_PLATFORM_HOST, VITE_ROOT_DOMAIN, VITE_DEVELOPMENT_DOMAIN and VITE_DEVELOPMENT_HOSTS are required",
+  );
+}
+if (configuredCookieMode !== "true" && configuredCookieMode !== "false") {
+  throw new Error("VITE_AUTH_COOKIE_MODE must be explicitly set to true or false");
 }
 
 // Production is always cookie based. Bearer tokens are retained only for local
 // development so production credentials are never exposed to JavaScript storage.
-export const COOKIE_AUTH_MODE = import.meta.env.PROD || import.meta.env.VITE_AUTH_COOKIE_MODE === "true";
+export const COOKIE_AUTH_MODE = import.meta.env.PROD || configuredCookieMode === "true";
 
 function resolveApiBase() {
-  if (configuredApi) return configuredApi;
-
-  const isLocalHost = developmentHosts.includes(host) || host.endsWith(`.${import.meta.env.VITE_DEVELOPMENT_DOMAIN || "localhost"}`);
+  const isLocalHost = developmentHosts.includes(host) || host.endsWith(`.${developmentDomain}`);
   const isProductionHost = host === platformHost || host.endsWith(`.${rootDomain}`);
 
   if (!isLocalHost && !isProductionHost) {
     throw new Error(`Unsupported ShuleLink host: ${host}`);
   }
 
+  if (isLocalHost && !apiPort) {
+    throw new Error("VITE_API_PORT is required for local development");
+  }
+
   const protocol = isLocalHost ? "http:" : "https:";
-  const port = isLocalHost && apiPort ? `:${apiPort}` : "";
+  const port = isLocalHost ? `:${apiPort}` : "";
   return `${protocol}//${host}${port}${apiPath}`;
 }
 
