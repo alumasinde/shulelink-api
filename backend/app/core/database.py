@@ -53,12 +53,13 @@ async def run_migrations()->None:
                 await cursor.execute("SELECT version FROM schema_migrations"); applied={row[0] for row in await cursor.fetchall()}; seen_versions:set[int]=set()
                 for path in files:
                     version=int(path.name.split("_",1)[0])
-                    if version in seen_versions:raise RuntimeError(f"Duplicate migration version detected: {version}")
-                    seen_versions.add(version)
+                    # An applied migration is immutable history. Skip it before duplicate-version validation.
                     if version in applied:continue
+                    if version in seen_versions:raise RuntimeError(f"Duplicate unapplied migration version detected: {version}")
+                    seen_versions.add(version)
                     sql=path.read_text(encoding="utf-8").strip()
                     if not sql:continue
-                    await cursor.execute(sql); await cursor.execute("INSERT INTO schema_migrations (version,filename) VALUES (%s,%s)",(version,path.name))
+                    await cursor.execute(sql); await cursor.execute("INSERT INTO schema_migrations (version,filename) VALUES (%s,%s)",(version,path.name)); applied.add(version)
         finally:
             if lock_acquired:
                 async with connection.cursor() as cursor:await cursor.execute("SELECT RELEASE_LOCK('shulelink:schema-migrations')")
