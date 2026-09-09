@@ -7,7 +7,7 @@ import asyncio
 import getpass
 import sys
 
-from aiomysql import IntegrityError
+from pymysql.err import IntegrityError
 
 from app.core.database import close_database, get_central_pool, initialize_database
 from app.core.security import hash_password, validate_password
