@@ -14,6 +14,7 @@ const can = (permission) => auth.user?.permissions?.includes(permission);
 const tenantNavigation = computed(() => [
   { label: "Dashboard", icon: "bi-grid-1x2", to: "/school" },
   { label: "School Structure", icon: "bi-diagram-3", to: "/school/structure", permission: "school.structure.read" },
+  { label: "Import & Export", icon: "bi-arrow-left-right", to: "/school/data-transfer", permission: "school.structure.manage" },
   { label: "Students", icon: "bi-people", to: "/school/students", permission: "students.read" },
   { label: "Guardians", icon: "bi-person-hearts", to: "/school/guardians", permission: "students.read" },
   { label: "Portal Accounts", icon: "bi-person-badge", to: "/school/portal-accounts", permission: "accounts.manage" },
