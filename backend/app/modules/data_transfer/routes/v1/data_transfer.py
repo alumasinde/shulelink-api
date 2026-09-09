@@ -14,6 +14,7 @@ from app.modules.data_transfer.students import build_export as build_student_exp
 router = APIRouter(prefix="/data-transfer", tags=["Data Transfer"])
 
 XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+MAX_IMPORT_BYTES = 10 * 1024 * 1024
 
 
 async def _normalize_student_import_academic_years(tenant_id: UUID, content: bytes) -> bytes:
@@ -93,6 +94,8 @@ async def students_import(file: UploadFile = File(...), mode: str = Query("creat
     if not (file.filename or "").lower().endswith(".xlsx"): raise HTTPException(400, "Only .xlsx Excel files are supported")
     try:
         content = await file.read()
+        if len(content) > MAX_IMPORT_BYTES:
+            raise HTTPException(413, "Import file is too large. Maximum size is 10 MB.")
         content = await _normalize_student_import_academic_years(tenant_id, content)
         return await import_student_workbook(tenant_id, content, mode)
     except ValueError as exc:
