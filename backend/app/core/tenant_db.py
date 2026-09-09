@@ -23,7 +23,8 @@ async def get_tenant_pool(tenant_id:UUID)->aiomysql.Pool:
     if key in _pools:return _pools[key]
     try:password=decrypt_secret(row[5])
     except Exception as exc:raise HTTPException(503,"Dedicated tenant database credentials are unavailable") from exc
-    kwargs=dict(host=row[1],port=int(row[2]),db=row[3],user=row[4],password=password,minsize=settings.db_pool_min_size,maxsize=settings.db_pool_max_size,pool_recycle=settings.db_pool_recycle_seconds,connect_timeout=settings.db_connect_timeout_seconds,read_timeout=settings.db_read_timeout_seconds,write_timeout=settings.db_write_timeout_seconds,autocommit=True,charset="utf8mb4",use_unicode=True)
+    # Keep kwargs compatible with aiomysql 0.2.0; it accepts connect_timeout but not read/write timeout kwargs.
+    kwargs=dict(host=row[1],port=int(row[2]),db=row[3],user=row[4],password=password,minsize=settings.db_pool_min_size,maxsize=settings.db_pool_max_size,pool_recycle=settings.db_pool_recycle_seconds,connect_timeout=settings.db_connect_timeout_seconds,autocommit=True,charset="utf8mb4",use_unicode=True)
     ssl_context=_ssl_context()
     if ssl_context is not None:kwargs["ssl"]=ssl_context
     pool=await aiomysql.create_pool(**kwargs); _pools[key]=pool; return pool
