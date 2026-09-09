@@ -15,47 +15,203 @@ router = APIRouter(prefix="/data-transfer", tags=["Data Transfer"])
 
 XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MAX_IMPORT_BYTES = 10 * 1024 * 1024
+MAX_IMPORT_ERRORS = 200
 
 
-async def _normalize_student_import_academic_years(tenant_id: UUID, content: bytes) -> bytes:
-    """Translate human-friendly four-digit academic years to stored names.
+def _reference_key(value: object) -> str:
+    return " ".join(str(value or "").strip().lower().split())
 
-    For example, an Excel value of ``2026`` is resolved to the school's
-    matching academic year record when its dates fall within calendar 2026,
-    such as 2026-01-01 through 2026-11-30. Exact stored names are left alone.
-    """
+
+def _reference_candidates(rows):
+    """Build a normalized name/code lookup and detect ambiguous aliases."""
+    lookup: dict[str, str] = {}
+    ambiguous: dict[str, set[str]] = {}
+    for row in rows:
+        record_id, code, name = str(row[0]), row[1], row[2]
+        for value in (code, name):
+            key = _reference_key(value)
+            if not key:
+                continue
+            previous = lookup.get(key)
+            if previous and previous != record_id:
+                ambiguous.setdefault(key, {previous}).add(record_id)
+            else:
+                lookup[key] = record_id
+    for key in ambiguous:
+        lookup.pop(key, None)
+    return lookup, ambiguous
+
+
+def _resolve_reference(value: object, lookup: dict[str, str], ambiguous: dict[str, set[str]], label: str, available: list[str]) -> str:
+    raw = str(value or "").strip()
+    key = _reference_key(raw)
+    if not key:
+        raise ValueError(f"{label} is required")
+    if key in ambiguous:
+        raise ValueError(f"{label} '{raw}' is ambiguous in this school configuration")
+    resolved = lookup.get(key)
+    if resolved:
+        return resolved
+    # A stream is commonly entered as "Stream A" while its configured code is "A".
+    if label == "Stream" and key.startswith("stream "):
+        short_key = _reference_key(key[7:])
+        if short_key in ambiguous:
+            raise ValueError(f"{label} '{raw}' is ambiguous in this school configuration")
+        resolved = lookup.get(short_key)
+        if resolved:
+            return resolved
+    sample = ", ".join(available[:10])
+    suffix = f" Available: {sample}" if sample else " No active records are configured."
+    raise ValueError(f"{label} '{raw}' not found.{suffix}")
+
+
+async def _normalize_student_import_references(tenant_id: UUID, content: bytes) -> tuple[bytes, list[dict]]:
+    """Preflight and normalize all school-structure references used by enrollment rows."""
     workbook = load_workbook(BytesIO(content), read_only=False, data_only=False)
+    errors: list[dict] = []
     try:
         if "Enrollments" not in workbook.sheetnames:
-            return content
+            return content, errors
 
         sheet = workbook["Enrollments"]
         headers = [str(cell.value or "").strip().lower().replace(" (required)", "") for cell in sheet[1]]
-        if "academic_year" not in headers:
-            return content
+        required_headers = {"student_admission_number", "academic_year", "class_level", "stream", "enrollment_date", "exit_date", "status"}
+        if not required_headers.issubset(set(headers)):
+            return content, errors
 
-        academic_year_column = headers.index("academic_year") + 1
+        columns = {name: headers.index(name) + 1 for name in headers}
         pool = get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                resolved: dict[str, str] = {}
-                for row in sheet.iter_rows(min_row=2):
-                    value = row[academic_year_column - 1].value
-                    raw = "" if value is None else str(value).strip()
-                    if not (len(raw) == 4 and raw.isdigit()):
+                await cur.execute(
+                    "SELECT id, code, name FROM class_levels WHERE tenant_id=%s AND is_active=1 ORDER BY level_order, name",
+                    (str(tenant_id),),
+                )
+                class_rows = await cur.fetchall()
+                class_lookup, class_ambiguous = _reference_candidates(class_rows)
+                class_available = [str(row[2]) for row in class_rows]
+
+                await cur.execute(
+                    "SELECT id, code, name, class_level_id FROM streams WHERE tenant_id=%s AND is_active=1 ORDER BY class_level_id, name",
+                    (str(tenant_id),),
+                )
+                stream_rows = await cur.fetchall()
+                streams_by_class: dict[str, list] = {}
+                for row in stream_rows:
+                    streams_by_class.setdefault(str(row[3]), []).append(row)
+
+                # Keep workbook-local student keys available so new students can be referenced.
+                workbook_students: set[str] = set()
+                if "Students" in workbook.sheetnames:
+                    student_sheet = workbook["Students"]
+                    student_headers = [str(cell.value or "").strip().lower().replace(" (required)", "") for cell in student_sheet[1]] if student_sheet.max_row else []
+                    if "admission_number" in student_headers:
+                        student_col = student_headers.index("admission_number") + 1
+                        workbook_students = {
+                            str(row[student_col - 1].value).strip()
+                            for row in student_sheet.iter_rows(min_row=2)
+                            if row[student_col - 1].value is not None and str(row[student_col - 1].value).strip()
+                        }
+
+                seen_enrollments: set[tuple[str, str]] = set()
+                for row_no in range(2, sheet.max_row + 1):
+                    values = {name: sheet.cell(row_no, col).value for name, col in columns.items()}
+                    if not any(value is not None and str(value).strip() for value in values.values()):
                         continue
-                    if raw in resolved:
-                        row[academic_year_column - 1].value = resolved[raw]
+
+                    student_adm = str(values.get("student_admission_number") or "").strip()
+                    if student_adm and student_adm not in workbook_students:
+                        await cur.execute(
+                            "SELECT id FROM students WHERE tenant_id=%s AND admission_number=%s",
+                            (str(tenant_id), student_adm),
+                        )
+                        if not await cur.fetchone():
+                            errors.append({"sheet": "Enrollments", "row": row_no, "message": f"Student '{student_adm}' not found in this import or school."})
+
+                    try:
+                        academic_year = await resolve_import_academic_year(cur, tenant_id, values.get("academic_year"))
+                        if not academic_year:
+                            raw_year = str(values.get("academic_year") or "").strip()
+                            errors.append({"sheet": "Enrollments", "row": row_no, "message": f"Academic year '{raw_year}' not found in this school."})
+                        else:
+                            sheet.cell(row_no, columns["academic_year"]).value = academic_year
+                    except ValueError as exc:
+                        errors.append({"sheet": "Enrollments", "row": row_no, "message": str(exc)})
+
+                    try:
+                        class_id = _resolve_reference(values.get("class_level"), class_lookup, class_ambiguous, "Class level", class_available)
+                        sheet.cell(row_no, columns["class_level"]).value = next(str(row[1]) for row in class_rows if str(row[0]) == class_id)
+                    except (ValueError, StopIteration) as exc:
+                        errors.append({"sheet": "Enrollments", "row": row_no, "message": str(exc) or "Class level could not be resolved"})
+                        class_id = None
+
+                    if class_id:
+                        class_stream_rows = streams_by_class.get(class_id, [])
+                        stream_lookup, stream_ambiguous = _reference_candidates(class_stream_rows)
+                        stream_available = [str(row[2]) for row in class_stream_rows]
+                        stream_value = values.get("stream")
+                        if stream_value is not None and str(stream_value).strip():
+                            try:
+                                stream_id = _resolve_reference(stream_value, stream_lookup, stream_ambiguous, "Stream", stream_available)
+                                stream_row = next(row for row in class_stream_rows if str(row[0]) == stream_id)
+                                sheet.cell(row_no, columns["stream"]).value = str(stream_row[1])
+                            except (ValueError, StopIteration) as exc:
+                                errors.append({"sheet": "Enrollments", "row": row_no, "message": str(exc) or "Stream could not be resolved"})
+                        elif class_stream_rows:
+                            # Blank stream remains valid because stream_id is nullable.
+                            pass
+
+                    status = str(values.get("status") or "active").strip().lower()
+                    if status not in {"active", "completed", "withdrawn"}:
+                        errors.append({"sheet": "Enrollments", "row": row_no, "message": f"Enrollment status '{status}' is invalid. Allowed: active, completed, withdrawn."})
+
+                    start = values.get("enrollment_date")
+                    end = values.get("exit_date")
+                    if start and end:
+                        try:
+                            from datetime import date, datetime
+                            start_date = start.date() if isinstance(start, datetime) else start if isinstance(start, date) else date.fromisoformat(str(start).strip())
+                            end_date = end.date() if isinstance(end, datetime) else end if isinstance(end, date) else date.fromisoformat(str(end).strip())
+                            if end_date < start_date:
+                                errors.append({"sheet": "Enrollments", "row": row_no, "message": "exit_date cannot be before enrollment_date"})
+                        except ValueError:
+                            pass
+
+                    normalized_year = str(sheet.cell(row_no, columns["academic_year"]).value or "").strip()
+                    if student_adm and normalized_year:
+                        duplicate_key = (_reference_key(student_adm), _reference_key(normalized_year))
+                        if duplicate_key in seen_enrollments:
+                            errors.append({"sheet": "Enrollments", "row": row_no, "message": f"Duplicate enrollment for student '{student_adm}' and academic year '{normalized_year}' in this import."})
+                        seen_enrollments.add(duplicate_key)
+
+                # Existing database enrollments are checked after workbook references are normalized.
+                for row_no in range(2, sheet.max_row + 1):
+                    student_adm = str(sheet.cell(row_no, columns["student_admission_number"]).value or "").strip()
+                    year_name = str(sheet.cell(row_no, columns["academic_year"]).value or "").strip()
+                    if not student_adm or not year_name:
                         continue
-                    name = await resolve_import_academic_year(cur, tenant_id, value)
-                    if name:
-                        resolved[raw] = name
-                        row[academic_year_column - 1].value = name
+                    await cur.execute(
+                        """
+                        SELECT e.id
+                        FROM student_enrollments e
+                        JOIN students s ON s.id=e.student_id
+                        JOIN academic_years ay ON ay.id=e.academic_year_id
+                        WHERE e.tenant_id=%s AND s.admission_number=%s AND ay.name=%s
+                        LIMIT 1
+                        """,
+                        (str(tenant_id), student_adm, year_name),
+                    )
+                    if await cur.fetchone():
+                        # Do not reject here: the importer supports upsert. Create mode is handled by the importer.
+                        pass
+
+        if errors:
+            return content, errors[:MAX_IMPORT_ERRORS]
 
         output = BytesIO()
         workbook.save(output)
         output.seek(0)
-        return output.getvalue()
+        return output.getvalue(), []
     finally:
         workbook.close()
 
@@ -91,12 +247,15 @@ async def students_export(tenant_id: UUID = Depends(require_tenant_permission("s
 
 @router.post("/students/import")
 async def students_import(file: UploadFile = File(...), mode: str = Query("create", pattern="^(create|upsert)$"), tenant_id: UUID = Depends(require_tenant_permission("students.manage"))):
-    if not (file.filename or "").lower().endswith(".xlsx"): raise HTTPException(400, "Only .xlsx Excel files are supported")
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(400, "Only .xlsx Excel files are supported")
     try:
         content = await file.read()
         if len(content) > MAX_IMPORT_BYTES:
             raise HTTPException(413, "Import file is too large. Maximum size is 10 MB.")
-        content = await _normalize_student_import_academic_years(tenant_id, content)
+        content, reference_errors = await _normalize_student_import_references(tenant_id, content)
+        if reference_errors:
+            return {"valid": False, "mode": mode, "errors": reference_errors, "error_count": len(reference_errors), "created": 0, "updated": 0}
         return await import_student_workbook(tenant_id, content, mode)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
