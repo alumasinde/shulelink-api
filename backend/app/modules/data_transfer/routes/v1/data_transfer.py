@@ -10,6 +10,7 @@ from app.core.dependencies import require_tenant_permission
 from app.modules.data_transfer.academic_years import resolve_import_academic_year
 from app.modules.data_transfer.school_structure import build_export, build_template, import_workbook, _fetch_rows
 from app.modules.data_transfer.students import build_export as build_student_export, build_template as build_student_template, import_workbook as import_student_workbook, _export_rows as export_student_rows
+from app.modules.data_transfer.academics import build_export as build_academics_export, build_template as build_academics_template, import_workbook as import_academics_workbook, _fetch_rows as export_academics_rows
 
 router = APIRouter(prefix="/data-transfer", tags=["Data Transfer"])
 
@@ -84,8 +85,6 @@ def _resolve_stream(value: object, rows) -> str:
         index = _alphabetic_stream_index(raw)
         if index is None or index >= len(rows):
             raise original
-        # Do not apply an ordinal alias if it would collide with an actual
-        # configured name/code alias in another record.
         candidate = rows[index]
         return str(candidate[0])
 
@@ -177,8 +176,6 @@ async def _normalize_student_import_references(tenant_id: UUID, content: bytes) 
                             try:
                                 stream_id = _resolve_stream(stream_value, class_stream_rows)
                                 stream_row = next(row for row in class_stream_rows if str(row[0]) == stream_id)
-                                # Normalize to the configured stream code because
-                                # the downstream importer resolves code/name values.
                                 sheet.cell(row_no, columns["stream"]).value = str(stream_row[1])
                             except (ValueError, StopIteration) as exc:
                                 available = ", ".join(str(row[2]) for row in class_stream_rows[:10])
@@ -262,3 +259,24 @@ async def students_import(file: UploadFile = File(...), mode: str = Query("creat
         return await import_student_workbook(tenant_id, content, mode)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/academics/teachers/template")
+async def academics_teachers_template(tenant_id: UUID = Depends(require_tenant_permission("teachers.manage"))):
+    del tenant_id
+    return StreamingResponse(build_academics_template(), media_type=XLSX_MEDIA, headers={"Content-Disposition": 'attachment; filename="ShuleLink_Teachers_Subject_Assignments_Template.xlsx"'})
+
+
+@router.get("/academics/teachers/export")
+async def academics_teachers_export(tenant_id: UUID = Depends(require_tenant_permission("teachers.read"))):
+    return StreamingResponse(build_academics_export(await export_academics_rows(tenant_id)), media_type=XLSX_MEDIA, headers={"Content-Disposition": 'attachment; filename="ShuleLink_Teachers_Subject_Assignments_Export.xlsx"'})
+
+
+@router.post("/academics/teachers/import")
+async def academics_teachers_import(file: UploadFile = File(...), mode: str = Query("create", pattern="^(create|upsert)$"), tenant_id: UUID = Depends(require_tenant_permission("teachers.manage"))):
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(400, "Only .xlsx Excel files are supported")
+    content = await file.read()
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(413, "Import file is too large. Maximum size is 10 MB.")
+    return await import_academics_workbook(tenant_id, content, mode)
