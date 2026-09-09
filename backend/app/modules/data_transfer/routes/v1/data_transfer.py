@@ -42,6 +42,16 @@ def _reference_candidates(rows):
     return lookup, ambiguous
 
 
+def _alphabetic_stream_index(value: object) -> int | None:
+    """Return zero-based index for A, B, ..., Z style stream aliases."""
+    key = _reference_key(value)
+    if key.startswith("stream "):
+        key = key[7:].strip()
+    if len(key) != 1 or not ("a" <= key <= "z"):
+        return None
+    return ord(key) - ord("a")
+
+
 def _resolve_reference(value: object, lookup: dict[str, str], ambiguous: dict[str, set[str]], label: str, available: list[str]) -> str:
     raw = str(value or "").strip()
     key = _reference_key(raw)
@@ -52,17 +62,32 @@ def _resolve_reference(value: object, lookup: dict[str, str], ambiguous: dict[st
     resolved = lookup.get(key)
     if resolved:
         return resolved
-    # A stream is commonly entered as "Stream A" while its configured code is "A".
-    if label == "Stream" and key.startswith("stream "):
-        short_key = _reference_key(key[7:])
-        if short_key in ambiguous:
-            raise ValueError(f"{label} '{raw}' is ambiguous in this school configuration")
-        resolved = lookup.get(short_key)
-        if resolved:
-            return resolved
     sample = ", ".join(available[:10])
     suffix = f" Available: {sample}" if sample else " No active records are configured."
     raise ValueError(f"{label} '{raw}' not found.{suffix}")
+
+
+def _resolve_stream(value: object, rows) -> str:
+    """Resolve a stream by code/name, or by conventional A/B/C ordinal alias.
+
+    The ordinal alias is deliberately scoped to the selected class level and
+    only applies when the supplied value is a single alphabetic letter.
+    Thus A means the first configured stream for that class, B the second,
+    etc.; it never crosses class-level boundaries.
+    """
+    lookup, ambiguous = _reference_candidates(rows)
+    available = [str(row[2]) for row in rows]
+    raw = str(value or "").strip()
+    try:
+        return _resolve_reference(raw, lookup, ambiguous, "Stream", available)
+    except ValueError as original:
+        index = _alphabetic_stream_index(raw)
+        if index is None or index >= len(rows):
+            raise original
+        # Do not apply an ordinal alias if it would collide with an actual
+        # configured name/code alias in another record.
+        candidate = rows[index]
+        return str(candidate[0])
 
 
 async def _normalize_student_import_references(tenant_id: UUID, content: bytes) -> tuple[bytes, list[dict]]:
@@ -100,7 +125,6 @@ async def _normalize_student_import_references(tenant_id: UUID, content: bytes) 
                 for row in stream_rows:
                     streams_by_class.setdefault(str(row[3]), []).append(row)
 
-                # Keep workbook-local student keys available so new students can be referenced.
                 workbook_students: set[str] = set()
                 if "Students" in workbook.sheetnames:
                     student_sheet = workbook["Students"]
@@ -140,26 +164,26 @@ async def _normalize_student_import_references(tenant_id: UUID, content: bytes) 
 
                     try:
                         class_id = _resolve_reference(values.get("class_level"), class_lookup, class_ambiguous, "Class level", class_available)
-                        sheet.cell(row_no, columns["class_level"]).value = next(str(row[1]) for row in class_rows if str(row[0]) == class_id)
+                        class_row = next(row for row in class_rows if str(row[0]) == class_id)
+                        sheet.cell(row_no, columns["class_level"]).value = str(class_row[1])
                     except (ValueError, StopIteration) as exc:
                         errors.append({"sheet": "Enrollments", "row": row_no, "message": str(exc) or "Class level could not be resolved"})
                         class_id = None
 
                     if class_id:
                         class_stream_rows = streams_by_class.get(class_id, [])
-                        stream_lookup, stream_ambiguous = _reference_candidates(class_stream_rows)
-                        stream_available = [str(row[2]) for row in class_stream_rows]
                         stream_value = values.get("stream")
                         if stream_value is not None and str(stream_value).strip():
                             try:
-                                stream_id = _resolve_reference(stream_value, stream_lookup, stream_ambiguous, "Stream", stream_available)
+                                stream_id = _resolve_stream(stream_value, class_stream_rows)
                                 stream_row = next(row for row in class_stream_rows if str(row[0]) == stream_id)
+                                # Normalize to the configured stream code because
+                                # the downstream importer resolves code/name values.
                                 sheet.cell(row_no, columns["stream"]).value = str(stream_row[1])
                             except (ValueError, StopIteration) as exc:
-                                errors.append({"sheet": "Enrollments", "row": row_no, "message": str(exc) or "Stream could not be resolved"})
-                        elif class_stream_rows:
-                            # Blank stream remains valid because stream_id is nullable.
-                            pass
+                                available = ", ".join(str(row[2]) for row in class_stream_rows[:10])
+                                suffix = f" Available: {available}" if available else " No active streams are configured for this class level."
+                                errors.append({"sheet": "Enrollments", "row": row_no, "message": f"{exc}{suffix}"})
 
                     status = str(values.get("status") or "active").strip().lower()
                     if status not in {"active", "completed", "withdrawn"}:
@@ -183,27 +207,6 @@ async def _normalize_student_import_references(tenant_id: UUID, content: bytes) 
                         if duplicate_key in seen_enrollments:
                             errors.append({"sheet": "Enrollments", "row": row_no, "message": f"Duplicate enrollment for student '{student_adm}' and academic year '{normalized_year}' in this import."})
                         seen_enrollments.add(duplicate_key)
-
-                # Existing database enrollments are checked after workbook references are normalized.
-                for row_no in range(2, sheet.max_row + 1):
-                    student_adm = str(sheet.cell(row_no, columns["student_admission_number"]).value or "").strip()
-                    year_name = str(sheet.cell(row_no, columns["academic_year"]).value or "").strip()
-                    if not student_adm or not year_name:
-                        continue
-                    await cur.execute(
-                        """
-                        SELECT e.id
-                        FROM student_enrollments e
-                        JOIN students s ON s.id=e.student_id
-                        JOIN academic_years ay ON ay.id=e.academic_year_id
-                        WHERE e.tenant_id=%s AND s.admission_number=%s AND ay.name=%s
-                        LIMIT 1
-                        """,
-                        (str(tenant_id), student_adm, year_name),
-                    )
-                    if await cur.fetchone():
-                        # Do not reject here: the importer supports upsert. Create mode is handled by the importer.
-                        pass
 
         if errors:
             return content, errors[:MAX_IMPORT_ERRORS]
