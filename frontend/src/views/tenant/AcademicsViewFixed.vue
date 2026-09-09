@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { teachers, assignments, rooms, periods, timetable } from '../../api/academics'
 import { academicYears, terms, classes, streams, subjects, departments, classSubjects } from '../../api/schoolStructure'
+import TeacherManagementPanel from './TeacherManagementPanel.vue'
 import TeacherSubjectsPanel from './TeacherSubjectsPanel.vue'
 
 const tab = ref('teachers')
@@ -124,6 +125,7 @@ async function addPeriod() { await run(async () => { await periods.create(period
 async function addEntry() { await run(async () => { await timetable.create(entryForm.value) }) }
 async function removeEntry(id) { if (!confirm('Remove this timetable entry?')) return; await run(async () => { await timetable.remove(id) }) }
 async function generate() { await run(async () => { const r=await timetable.generate(generateForm.value); success.value=`Generated ${r.created} lesson(s); ${r.skipped} could not be placed.` }) }
+function teacherPanelRefresh() { load() }
 onMounted(load)
 </script>
 
@@ -135,7 +137,7 @@ onMounted(load)
 
   <section v-if="tab==='teachers'" class="row g-4">
     <div class="col-xl-4"><div class="card"><div class="card-header fw-semibold">Add teacher</div><div class="card-body"><form @submit.prevent="addTeacher"><div class="row g-2"><div class="col-6"><label class="form-label">Teacher No.</label><input v-model.trim="teacherForm.teacher_number" class="form-control" required></div><div class="col-6"><label class="form-label">Gender</label><select v-model="teacherForm.gender" class="form-select"><option>unspecified</option><option>male</option><option>female</option><option>other</option></select></div><div class="col-6"><label class="form-label">First name</label><input v-model.trim="teacherForm.first_name" class="form-control" required></div><div class="col-6"><label class="form-label">Last name</label><input v-model.trim="teacherForm.last_name" class="form-control" required></div><div class="col-12"><label class="form-label">Middle name</label><input v-model.trim="teacherForm.middle_name" class="form-control"></div><div class="col-6"><label class="form-label">Phone</label><input v-model.trim="teacherForm.phone" class="form-control"></div><div class="col-6"><label class="form-label">Email</label><input v-model.trim="teacherForm.email" type="email" class="form-control"></div><div class="col-12"><label class="form-label">Department</label><select v-model="teacherForm.department_id" class="form-select"><option :value="null">None</option><option v-for="d in data.departments" :key="d.id" :value="d.id">{{d.name}}</option></select></div><div class="col-12"><button class="btn btn-primary w-100" :disabled="saving">Add teacher</button></div></div></form></div></div></div>
-    <div class="col-xl-8"><div class="card"><div class="card-header fw-semibold">Teachers <span class="badge bg-secondary ms-1">{{data.teachers.length}}</span></div><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>No.</th><th>Name</th><th>Department</th><th>Contact</th><th>Status</th></tr></thead><tbody><tr v-for="t in data.teachers" :key="t.id"><td>{{t.teacher_number}}</td><td>{{t.first_name}} {{t.middle_name||''}} {{t.last_name}}</td><td>{{t.department_name||'—'}}</td><td>{{t.phone||t.email||'—'}}</td><td>{{t.status}}</td></tr><tr v-if="!data.teachers.length"><td colspan="5" class="text-center text-muted py-4">No teachers yet.</td></tr></tbody></table></div></div></div>
+    <div class="col-xl-8"><TeacherManagementPanel :teachers="data.teachers" :departments="data.departments" @refresh="teacherPanelRefresh" /></div>
     <div class="col-12"><TeacherSubjectsPanel /></div>
   </section>
 
