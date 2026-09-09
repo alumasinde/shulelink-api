@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "../stores/auth";
-import { COOKIE_AUTH_MODE } from "../api/client";
 import HomeView from "../views/HomeView.vue";
 import LoginView from "../views/auth/LoginView.vue";
 import ActivateAccountView from "../views/auth/ActivateAccountView.vue";
@@ -13,7 +12,14 @@ import StudentsView from "../views/tenant/StudentsView.vue";
 import GuardiansView from "../views/tenant/GuardiansView.vue";
 import PortalAccountsView from "../views/tenant/PortalAccountsView.vue";
 
-const isPlatformHost = () => ["admin.localhost", "admin.shulelink.co.ke", "localhost", "127.0.0.1"].includes(window.location.hostname);
+const PLATFORM_HOSTS = new Set([
+  "admin.localhost",
+  "admin.shulelink.co.ke",
+  "localhost",
+  "127.0.0.1",
+]);
+
+const isPlatformHost = () => PLATFORM_HOSTS.has(window.location.hostname);
 const portalPath = (user) => user?.user_type === "platform" ? "/platform" : "/school";
 
 const router = createRouter({
@@ -32,6 +38,9 @@ const router = createRouter({
     { path: "/school/portal-accounts", name: "portal-accounts", component: PortalAccountsView, meta: { auth: true, tenant: true, permission: "accounts.manage" } },
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
+  scrollBehavior() {
+    return { top: 0 };
+  },
 });
 
 let hydrated = false;
@@ -55,7 +64,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.auth && !auth.isAuthenticated) {
-    return `/login?redirect=${encodeURIComponent(to.fullPath)}`;
+    return { path: "/login", query: { redirect: to.fullPath } };
   }
 
   if (to.meta.platform && (!isPlatformHost() || !auth.isPlatform)) {
@@ -69,6 +78,12 @@ router.beforeEach(async (to) => {
   if (to.meta.permission && !auth.user?.permissions?.includes(to.meta.permission)) {
     return auth.isAuthenticated ? portalPath(auth.user) : "/login";
   }
+
+  return true;
+});
+
+router.onError((error) => {
+  if (import.meta.env.DEV) console.error("Navigation error:", error);
 });
 
 export default router;
