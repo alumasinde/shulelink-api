@@ -13,8 +13,11 @@ jobs:
         working-directory: backend
     env:
       PYTHONPATH: .
+      APP_NAME: ShuleLink
       APP_ENV: test
       DEBUG: "false"
+      APP_VERSION: 0.2.0
+      API_V1_PREFIX: /api/v1
       DB_HOST: 127.0.0.1
       DB_PORT: "3306"
       DB_NAME: shulelink_test
@@ -80,6 +83,8 @@ jobs:
       VITE_DEVELOPMENT_DOMAIN: localhost
       VITE_DEVELOPMENT_HOSTS: admin.localhost,localhost,127.0.0.1
       VITE_AUTH_COOKIE_MODE: "false"
+      VITE_DEV_SERVER_HOST: 127.0.0.1
+      VITE_DEV_SERVER_PORT: "5173"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
