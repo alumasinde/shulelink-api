@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 
 from app.core.database import get_pool
 
 
-def sid(value):
-    return str(value) if value is not None else None
+def sid(value): return str(value) if value is not None else None
 
 
 async def bulk_update_teachers(tenant_id: UUID, teacher_ids: list[UUID], changes: dict):
@@ -18,9 +17,7 @@ async def bulk_update_teachers(tenant_id: UUID, teacher_ids: list[UUID], changes
     if len(ids) > 500:
         raise HTTPException(422, "A maximum of 500 teachers can be edited at once")
 
-    allowed = {
-        "department_id", "employment_type", "status", "gender",
-    }
+    allowed = {"department_id", "employment_type", "status", "gender"}
     payload = {k: v for k, v in changes.items() if k in allowed}
     if not payload:
         raise HTTPException(422, "Select at least one field to update")
@@ -32,12 +29,12 @@ async def bulk_update_teachers(tenant_id: UUID, teacher_ids: list[UUID], changes
         try:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    f"SELECT id FROM teachers WHERE tenant_id=%s AND id IN ({placeholders}) FOR UPDATE",
+                    f"SELECT id,department_id FROM teachers WHERE tenant_id=%s AND id IN ({placeholders}) FOR UPDATE",
                     [sid(tenant_id), *ids],
                 )
-                found = {sid(row[0]) for row in await cur.fetchall()}
-                missing = [x for x in ids if x not in found]
-                if missing:
+                teacher_rows = await cur.fetchall()
+                found = {sid(row[0]) for row in teacher_rows}
+                if len(found) != len(ids):
                     raise HTTPException(404, "One or more selected teachers were not found")
 
                 department_id = payload.get("department_id")
@@ -59,6 +56,17 @@ async def bulk_update_teachers(tenant_id: UUID, teacher_ids: list[UUID], changes
                     [*args, sid(tenant_id), *ids],
                 )
                 updated = cur.rowcount
+
+                # Match the single-teacher edit rule: changing a department
+                # invalidates previously configured subjects for that teacher.
+                if department_id is not None:
+                    changed_ids = [sid(row[0]) for row in teacher_rows if sid(row[1]) != sid(department_id)]
+                    if changed_ids:
+                        changed_marks = ",".join(["%s"] * len(changed_ids))
+                        await cur.execute(
+                            f"DELETE FROM teacher_subjects WHERE tenant_id=%s AND teacher_id IN ({changed_marks})",
+                            [sid(tenant_id), *changed_ids],
+                        )
             await conn.commit()
         except Exception:
             await conn.rollback()
@@ -112,10 +120,9 @@ async def bulk_replace_teacher_subjects(tenant_id: UUID, teacher_ids: list[UUID]
                 )
                 for teacher_id in teachers_ids:
                     for subject_id in subjects_ids:
-                        from uuid import uuid4
                         await cur.execute(
                             "INSERT INTO teacher_subjects (id,tenant_id,teacher_id,subject_id) VALUES (%s,%s,%s,%s)",
-                            (sid(uuid4()), sid(tenant_id), teacher_id, subject_id),
+                            (str(uuid4()), sid(tenant_id), teacher_id, subject_id),
                         )
             await conn.commit()
         except Exception:
