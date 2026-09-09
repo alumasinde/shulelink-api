@@ -82,15 +82,19 @@ async def get_tenant_id_from_host(request: Request) -> UUID:
     return UUID(str(row[0]))
 
 
-async def require_tenant(principal: Principal = Depends(get_current_principal), tenant_id: UUID = Depends(get_tenant_id_from_host)) -> UUID:
+async def _set_tenant_pool(request: Request, tenant_id: UUID) -> None:
+    request.state.tenant_pool_token = set_request_pool(await get_tenant_pool(tenant_id))
+
+
+async def require_tenant(request: Request, principal: Principal = Depends(get_current_principal), tenant_id: UUID = Depends(get_tenant_id_from_host)) -> UUID:
     if principal.tenant_id != tenant_id: raise HTTPException(status_code=403, detail="Tenant context mismatch")
     if principal.user_type == "platform" and not principal.tenant_access_session_id: raise HTTPException(status_code=403, detail="Platform users must establish audited tenant access before tenant operations")
-    set_request_pool(await get_tenant_pool(tenant_id))
+    await _set_tenant_pool(request, tenant_id)
     return tenant_id
 
 
 def require_tenant_permission(permission_code: str):
-    async def dependency(principal: Principal = Depends(get_current_principal), tenant_id: UUID = Depends(get_tenant_id_from_host)) -> UUID:
+    async def dependency(request: Request, principal: Principal = Depends(get_current_principal), tenant_id: UUID = Depends(get_tenant_id_from_host)) -> UUID:
         if principal.tenant_id != tenant_id: raise HTTPException(status_code=403, detail="Tenant context mismatch")
         if principal.user_type == "platform" and not principal.tenant_access_session_id: raise HTTPException(status_code=403, detail="Platform users must establish audited tenant access before tenant operations")
         central = get_central_pool()
@@ -98,6 +102,6 @@ def require_tenant_permission(permission_code: str):
             async with conn.cursor() as cur:
                 await cur.execute("SELECT 1 FROM tenant_memberships m JOIN tenant_membership_roles mr ON mr.membership_id=m.id JOIN tenant_roles r ON r.id=mr.role_id JOIN tenant_role_permissions rp ON rp.role_id=r.id JOIN tenant_permissions p ON p.id=rp.permission_id WHERE m.tenant_id=%s AND m.tenant_user_id=%s AND m.status='active' AND p.code=%s LIMIT 1", (str(tenant_id), str(principal.user_id), permission_code))
                 if not await cur.fetchone(): raise HTTPException(status_code=403, detail="Insufficient tenant permission")
-        set_request_pool(await get_tenant_pool(tenant_id))
+        await _set_tenant_pool(request, tenant_id)
         return tenant_id
     return dependency
