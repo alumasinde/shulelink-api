@@ -10,6 +10,8 @@ export const teachers = {
   departmentSubjects: async (departmentId) => (await api.get(`/academics/departments/${departmentId}/subjects`)).data,
   subjects: async (teacherId) => (await api.get(`/academics/teachers/${teacherId}/subjects`)).data,
   updateSubjects: async (teacherId, subjectIds) => (await api.put(`/academics/teachers/${teacherId}/subjects`, { subject_ids: subjectIds })).data,
+  bulkUpdate: async (teacherIds, changes) => (await api.post('/academics/teachers/bulk-update', { teacher_ids: teacherIds, ...changes })).data,
+  bulkSubjects: async (teacherIds, subjectIds) => (await api.put('/academics/teachers/bulk-subjects', { teacher_ids: teacherIds, subject_ids: subjectIds })).data,
 }
 export const assignments = resource('/academics/assignments')
 export const rooms = { ...resource('/academics/timetable/rooms'), update: async (id,payload)=>(await api.put(`/academics/timetable/rooms/${id}`,payload)).data }
