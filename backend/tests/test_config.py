@@ -5,8 +5,11 @@ from app.core.config import Settings
 
 
 BASE = {
+    "app_name": "ShuleLink",
     "app_env": "development",
     "debug": True,
+    "app_version": "0.2.0",
+    "api_v1_prefix": "/api/v1",
     "db_host": "127.0.0.1",
     "db_port": 3306,
     "db_name": "shulelink_test",
@@ -87,6 +90,7 @@ def test_production_requires_provisioner_and_tls():
             smtp_username="smtp-user",
             smtp_password="smtp-password",
             smtp_from="no-reply@shulelink.co.ke",
+            auth_reset_return_token=False,
         )
 
 
@@ -117,6 +121,6 @@ def test_production_accepts_complete_configuration():
     assert settings.trusted_host_list == ["*.shulelink.co.ke", "admin.shulelink.co.ke"]
 
 
-def test_unknown_dotenv_key_is_rejected():
+def test_unknown_configuration_key_is_rejected():
     with pytest.raises(ValidationError):
         make_settings(UNDECLARED_CONFIGURATION_KEY="must-fail")
