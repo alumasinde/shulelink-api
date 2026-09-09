@@ -13,4 +13,7 @@ export const dataTransfer = {
   studentsTemplate: async () => blobGet('/data-transfer/students/template'),
   exportStudents: async () => blobGet('/data-transfer/students/export'),
   importStudents: async (file, mode = 'create') => upload('/data-transfer/students/import', file, mode),
+  teachersTemplate: async () => blobGet('/data-transfer/academics/teachers/template'),
+  exportTeachers: async () => blobGet('/data-transfer/academics/teachers/export'),
+  importTeachers: async (file, mode = 'create') => upload('/data-transfer/academics/teachers/import', file, mode),
 }
