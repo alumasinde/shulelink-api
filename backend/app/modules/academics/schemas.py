@@ -20,6 +20,7 @@ class TeacherCreate(BaseModel):
     phone: str | None = Field(default=None, max_length=40)
     email: str | None = Field(default=None, max_length=190)
     department_id: UUID | None = None
+    subject_ids: list[UUID] = Field(default_factory=list, max_length=2)
     employment_type: str | None = Field(default=None, max_length=60)
     employment_date: date | None = None
     status: str = Field(default='active', pattern='^(active|inactive|on_leave|terminated)$')
@@ -27,6 +28,12 @@ class TeacherCreate(BaseModel):
     @field_validator('teacher_number','first_name','middle_name','last_name','phone','email','employment_type','notes', mode='before')
     @classmethod
     def trim(cls, v): return clean(v)
+    @field_validator('subject_ids')
+    @classmethod
+    def unique_subjects(cls, v):
+        if len({str(x) for x in v}) != len(v): raise ValueError('A subject can only be selected once')
+        if len(v) > 2: raise ValueError('A teacher can select at most two subjects')
+        return v
 
 class TeacherUpdate(BaseModel):
     tenant_user_id: UUID | None = None
@@ -38,14 +45,21 @@ class TeacherUpdate(BaseModel):
     phone: str | None = Field(default=None, max_length=40)
     email: str | None = Field(default=None, max_length=190)
     department_id: UUID | None = None
+    subject_ids: list[UUID] | None = Field(default=None, max_length=2)
     employment_type: str | None = Field(default=None, max_length=60)
     employment_date: date | None = None
     status: str | None = Field(default=None, pattern='^(active|inactive|on_leave|terminated)$')
     notes: str | None = None
+    @field_validator('subject_ids')
+    @classmethod
+    def unique_subjects(cls, v):
+        if v is not None and len({str(x) for x in v}) != len(v): raise ValueError('A subject can only be selected once')
+        return v
 
 class TeacherResponse(TeacherCreate):
     id: UUID
     department_name: str | None = None
+    subjects: list[dict] = Field(default_factory=list)
 
 class AssignmentCreate(BaseModel):
     teacher_id: UUID
