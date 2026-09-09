@@ -21,18 +21,14 @@ logger = logging.getLogger("shulelink")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await initialize_database()
+    logger.info("database pool initialized", extra={"event": "database_pool_ready"})
     try:
-        await initialize_database()
-        logger.info("database pool initialized", extra={"event": "database_pool_ready"})
-    except Exception:
-        logger.exception(
-            "database initialization failed; readiness will remain unavailable",
-            extra={"event": "database_pool_failed"},
-        )
-    yield
-    await close_tenant_pools()
-    await close_database()
-    logger.info("application resources closed", extra={"event": "application_shutdown"})
+        yield
+    finally:
+        await close_tenant_pools()
+        await close_database()
+        logger.info("application resources closed", extra={"event": "application_shutdown"})
 
 
 def create_app() -> FastAPI:
