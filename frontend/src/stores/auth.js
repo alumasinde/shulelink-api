@@ -6,9 +6,21 @@ import { login as loginRequest, logout as logoutRequest, me as meRequest, verify
 const ACCESS_KEY = "shulelink_access_token";
 const REFRESH_KEY = "shulelink_refresh_token";
 const USER_KEY = "shulelink_user";
+const AUTH_EVENT = "shulelink:logout";
 
 function readUser() {
-  try { return JSON.parse(localStorage.getItem(USER_KEY) || "null"); } catch { return null; }
+  try {
+    const value = localStorage.getItem(USER_KEY);
+    return value ? JSON.parse(value) : null;
+  } catch {
+    localStorage.removeItem(USER_KEY);
+    return null;
+  }
+}
+
+function persistUser(user) {
+  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+  else localStorage.removeItem(USER_KEY);
 }
 
 export const useAuthStore = defineStore("auth", () => {
@@ -20,7 +32,7 @@ export const useAuthStore = defineStore("auth", () => {
   const isAuthenticated = computed(() => COOKIE_AUTH_MODE ? Boolean(user.value) : Boolean(accessToken.value && refreshToken.value));
   const isPlatform = computed(() => user.value?.user_type === "platform");
 
-  function persistTokens(data) {
+  function persistTokens(data = {}) {
     if (COOKIE_AUTH_MODE) {
       accessToken.value = null;
       refreshToken.value = null;
@@ -28,10 +40,22 @@ export const useAuthStore = defineStore("auth", () => {
       localStorage.removeItem(REFRESH_KEY);
       return;
     }
+
+    if (!data.access_token || !data.refresh_token) {
+      throw new Error("Authentication response is incomplete.");
+    }
+
     accessToken.value = data.access_token;
     refreshToken.value = data.refresh_token;
     localStorage.setItem(ACCESS_KEY, data.access_token);
     localStorage.setItem(REFRESH_KEY, data.refresh_token);
+  }
+
+  async function loadCurrentUser() {
+    const currentUser = await meRequest();
+    user.value = currentUser;
+    persistUser(currentUser);
+    return currentUser;
   }
 
   async function login(credentials, type) {
@@ -40,10 +64,10 @@ export const useAuthStore = defineStore("auth", () => {
       const result = await loginRequest(credentials, type);
       if (result.mfa_required) return result;
       persistTokens(result);
-      user.value = await meRequest();
-      localStorage.setItem(USER_KEY, JSON.stringify(user.value));
-      return user.value;
-    } finally { loading.value = false; }
+      return await loadCurrentUser();
+    } finally {
+      loading.value = false;
+    }
   }
 
   async function completeMfa(challengeId, code) {
@@ -51,17 +75,15 @@ export const useAuthStore = defineStore("auth", () => {
     try {
       const result = await verifyMfaRequest(challengeId, code);
       persistTokens(result);
-      user.value = await meRequest();
-      localStorage.setItem(USER_KEY, JSON.stringify(user.value));
-      return user.value;
-    } finally { loading.value = false; }
+      return await loadCurrentUser();
+    } finally {
+      loading.value = false;
+    }
   }
 
   async function hydrate() {
     try {
-      user.value = await meRequest();
-      localStorage.setItem(USER_KEY, JSON.stringify(user.value));
-      return user.value;
+      return await loadCurrentUser();
     } catch {
       clear();
       return null;
@@ -69,7 +91,11 @@ export const useAuthStore = defineStore("auth", () => {
   }
 
   async function logout() {
-    try { if (COOKIE_AUTH_MODE || refreshToken.value) await logoutRequest(refreshToken.value); } finally { clear(); }
+    try {
+      if (COOKIE_AUTH_MODE || refreshToken.value) await logoutRequest(refreshToken.value);
+    } finally {
+      clear();
+    }
   }
 
   function clear() {
@@ -81,5 +107,24 @@ export const useAuthStore = defineStore("auth", () => {
     localStorage.removeItem(USER_KEY);
   }
 
-  return { accessToken, refreshToken, user, loading, isAuthenticated, isPlatform, login, completeMfa, hydrate, logout, clear };
+  // A logout in another browser tab must invalidate this tab's in-memory state.
+  function handleExternalLogout() {
+    clear();
+  }
+
+  window.addEventListener(AUTH_EVENT, handleExternalLogout);
+
+  return {
+    accessToken,
+    refreshToken,
+    user,
+    loading,
+    isAuthenticated,
+    isPlatform,
+    login,
+    completeMfa,
+    hydrate,
+    logout,
+    clear,
+  };
 });
