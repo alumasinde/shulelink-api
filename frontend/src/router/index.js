@@ -12,14 +12,9 @@ import DataTransferView from "../views/tenant/DataTransferView.vue";
 import StudentsView from "../views/tenant/StudentsView.vue";
 import GuardiansView from "../views/tenant/GuardiansView.vue";
 import PortalAccountsView from "../views/tenant/PortalAccountsView.vue";
+import AcademicsView from "../views/tenant/AcademicsView.vue";
 
-const PLATFORM_HOSTS = new Set([
-  "admin.localhost",
-  "admin.shulelink.co.ke",
-  "localhost",
-  "127.0.0.1",
-]);
-
+const PLATFORM_HOSTS = new Set(["admin.localhost","admin.shulelink.co.ke","localhost","127.0.0.1"]);
 const isPlatformHost = () => PLATFORM_HOSTS.has(window.location.hostname);
 const portalPath = (user) => user?.user_type === "platform" ? "/platform" : "/school";
 
@@ -38,54 +33,23 @@ const router = createRouter({
     { path: "/school/students", name: "students", component: StudentsView, meta: { auth: true, tenant: true } },
     { path: "/school/guardians", name: "guardians", component: GuardiansView, meta: { auth: true, tenant: true } },
     { path: "/school/portal-accounts", name: "portal-accounts", component: PortalAccountsView, meta: { auth: true, tenant: true, permission: "accounts.manage" } },
+    { path: "/school/academics", name: "academics", component: AcademicsView, meta: { auth: true, tenant: true, permission: "academics.read" } },
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
-  scrollBehavior() {
-    return { top: 0 };
-  },
+  scrollBehavior() { return { top: 0 }; },
 });
 
 let hydrated = false;
 let hydrationPromise = null;
-
-async function ensureHydrated(auth) {
-  if (hydrated) return;
-  hydrationPromise ||= auth.hydrate().finally(() => {
-    hydrated = true;
-    hydrationPromise = null;
-  });
-  await hydrationPromise;
-}
-
+async function ensureHydrated(auth) { if (hydrated) return; hydrationPromise ||= auth.hydrate().finally(() => { hydrated = true; hydrationPromise = null; }); await hydrationPromise; }
 router.beforeEach(async (to) => {
-  const auth = useAuthStore();
-  await ensureHydrated(auth);
-
-  if (to.meta.guestOnly && auth.isAuthenticated) {
-    return isPlatformHost() ? "/platform" : portalPath(auth.user);
-  }
-
-  if (to.meta.auth && !auth.isAuthenticated) {
-    return { path: "/login", query: { redirect: to.fullPath } };
-  }
-
-  if (to.meta.platform && (!isPlatformHost() || !auth.isPlatform)) {
-    return auth.isAuthenticated ? portalPath(auth.user) : "/login";
-  }
-
-  if (to.meta.tenant && isPlatformHost()) {
-    return auth.isAuthenticated ? "/platform" : "/login";
-  }
-
-  if (to.meta.permission && !auth.user?.permissions?.includes(to.meta.permission)) {
-    return auth.isAuthenticated ? portalPath(auth.user) : "/login";
-  }
-
+  const auth = useAuthStore(); await ensureHydrated(auth);
+  if (to.meta.guestOnly && auth.isAuthenticated) return isPlatformHost() ? "/platform" : portalPath(auth.user);
+  if (to.meta.auth && !auth.isAuthenticated) return { path: "/login", query: { redirect: to.fullPath } };
+  if (to.meta.platform && (!isPlatformHost() || !auth.isPlatform)) return auth.isAuthenticated ? portalPath(auth.user) : "/login";
+  if (to.meta.tenant && isPlatformHost()) return auth.isAuthenticated ? "/platform" : "/login";
+  if (to.meta.permission && !auth.user?.permissions?.includes(to.meta.permission)) return auth.isAuthenticated ? portalPath(auth.user) : "/login";
   return true;
 });
-
-router.onError((error) => {
-  if (import.meta.env.DEV) console.error("Navigation error:", error);
-});
-
+router.onError((error) => { if (import.meta.env.DEV) console.error("Navigation error:", error); });
 export default router;
