@@ -41,7 +41,7 @@ class GuardianUpdate(BaseModel):
     @field_validator("email")
     @classmethod
     def email_valid(cls,value):return validate_email(value)
-class GuardianResponse(GuardianCreate): id:UUID; tenant_id:UUID
+class GuardianResponse(GuardianCreate): id:UUID
 class StudentGuardianCreate(BaseModel): guardian_id:UUID; relationship:str=Field(min_length=2,max_length=80); is_primary:bool=False; is_emergency_contact:bool=False; can_pick_up:bool=True
 class StudentGuardianResponse(StudentGuardianCreate): id:UUID; student_id:UUID; guardian:GuardianResponse
 class EnrollmentCreate(BaseModel): academic_year_id:UUID; class_level_id:UUID; stream_id:UUID|None=None; enrollment_date:date; exit_date:date|None=None; status:str=Field(default="active",pattern="^(active|completed|withdrawn|transferred)$"); notes:str|None=None
@@ -51,6 +51,5 @@ class DocumentTypeCreate(BaseModel): code:str=Field(min_length=2,max_length=80);
 class DocumentTypeResponse(DocumentTypeCreate): id:UUID
 class StudentDocumentCreate(BaseModel): document_type_id:UUID; file_name:str=Field(min_length=1,max_length=255); file_url:str=Field(min_length=1,max_length=500); issued_date:date|None=None; expiry_date:date|None=None; notes:str|None=None
 class StudentDocumentResponse(StudentDocumentCreate): id:UUID; student_id:UUID; document_type_name:str
-class AdmissionNumberSettings(BaseModel):
-    prefix:str=Field(default="ADM",max_length=30); separator:str=Field(default="-",max_length=5); include_year:bool=True; year_format:str=Field(default="YYYY",pattern="^(YYYY|YY)$"); padding:int=Field(default=4,ge=1,le=10); start:int=Field(default=1,ge=1,le=1_000_000_000); reset_yearly:bool=True
+class AdmissionNumberSettings(BaseModel): prefix:str=Field(default="ADM",max_length=30); separator:str=Field(default="-",max_length=5); include_year:bool=True; year_format:str=Field(default="YYYY",pattern="^(YYYY|YY)$"); padding:int=Field(default=4,ge=1,le=10); start:int=Field(default=1,ge=1,le=1_000_000_000); reset_yearly:bool=True
 class StudentDetailResponse(StudentResponse): guardians:list[StudentGuardianResponse]=Field(default_factory=list); enrollments:list[EnrollmentResponse]=Field(default_factory=list); documents:list[StudentDocumentResponse]=Field(default_factory=list)
