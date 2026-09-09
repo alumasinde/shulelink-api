@@ -1,9 +1,12 @@
 import axios from "axios";
 
 const host = window.location.hostname;
-const isPlatformHost = host === "admin.localhost" || host === "admin.shulelink.co.ke" || host === "localhost" || host === "127.0.0.1";
+const isPlatformHost = ["admin.localhost", "admin.shulelink.co.ke", "localhost", "127.0.0.1"].includes(host);
 const configuredApi = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
-export const COOKIE_AUTH_MODE = import.meta.env.VITE_AUTH_COOKIE_MODE === "true";
+
+// Development may use bearer tokens. Production is always cookie based so
+// access and refresh credentials are not exposed to JavaScript storage.
+export const COOKIE_AUTH_MODE = import.meta.env.PROD || import.meta.env.VITE_AUTH_COOKIE_MODE === "true";
 
 function resolveApiBase() {
   if (host.endsWith(".localhost")) return `${window.location.protocol}//${host}:8000/api/v1`;
@@ -21,66 +24,153 @@ export const api = axios.create({
   withCredentials: COOKIE_AUTH_MODE,
 });
 
+const SAFE_METHODS = new Set(["get", "head", "options"]);
+const PUBLIC_AUTH_PATHS = [
+  "/auth/login",
+  "/auth/platform/login",
+  "/auth/refresh",
+  "/auth/csrf",
+  "/auth/activate",
+  "/auth/password-reset/request",
+  "/auth/password-reset/confirm",
+  "/auth/mfa/verify",
+];
+
 function readCookie(name) {
   const encoded = `${name}=`;
   const item = document.cookie.split("; ").find((part) => part.startsWith(encoded));
   return item ? decodeURIComponent(item.slice(encoded.length)) : null;
 }
 
+function isPublicAuthRequest(url = "") {
+  return PUBLIC_AUTH_PATHS.some((path) => url.includes(path));
+}
+
 let csrfPromise = null;
+
 async function ensureCsrf() {
   if (!COOKIE_AUTH_MODE) return null;
-  let token = readCookie("__Host-shulelink_csrf");
-  if (token) return token;
-  csrfPromise ||= axios.get(`${API_BASE_URL}/auth/csrf`, { withCredentials: true });
-  await csrfPromise;
-  csrfPromise = null;
-  return readCookie("__Host-shulelink_csrf");
+
+  const existing = readCookie("__Host-shulelink_csrf");
+  if (existing) return existing;
+
+  csrfPromise ||= axios.get(`${API_BASE_URL}/auth/csrf`, {
+    withCredentials: true,
+    timeout: 15000,
+  });
+
+  try {
+    await csrfPromise;
+    return readCookie("__Host-shulelink_csrf");
+  } finally {
+    csrfPromise = null;
+  }
 }
 
 api.interceptors.request.use(async (config) => {
+  const method = (config.method || "get").toLowerCase();
+
   if (!COOKIE_AUTH_MODE) {
     const token = localStorage.getItem("shulelink_access_token");
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  } else if (!["get", "head", "options"].includes((config.method || "get").toLowerCase())) {
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  } else if (!SAFE_METHODS.has(method)) {
     const csrf = await ensureCsrf();
-    if (csrf) config.headers["X-CSRF-Token"] = csrf;
+    if (csrf) {
+      config.headers = config.headers || {};
+      config.headers["X-CSRF-Token"] = csrf;
+    }
   }
+
   return config;
 });
 
 let refreshing = null;
 
+async function refreshSession() {
+  if (refreshing) return refreshing;
+
+  refreshing = (async () => {
+    if (COOKIE_AUTH_MODE) {
+      const csrf = await ensureCsrf();
+      return axios.post(
+        `${API_BASE_URL}/auth/refresh`,
+        {},
+        {
+          withCredentials: true,
+          timeout: 15000,
+          headers: csrf ? { "X-CSRF-Token": csrf } : {},
+        },
+      );
+    }
+
+    const refreshToken = localStorage.getItem("shulelink_refresh_token");
+    if (!refreshToken) throw new Error("No refresh token available");
+
+    return axios.post(
+      `${API_BASE_URL}/auth/refresh`,
+      { refresh_token: refreshToken },
+      { timeout: 15000 },
+    );
+  })();
+
+  try {
+    const response = await refreshing;
+
+    if (!COOKIE_AUTH_MODE) {
+      const accessToken = response.data?.access_token;
+      const refreshToken = response.data?.refresh_token;
+      if (!accessToken || !refreshToken) throw new Error("Invalid refresh response");
+
+      localStorage.setItem("shulelink_access_token", accessToken);
+      localStorage.setItem("shulelink_refresh_token", refreshToken);
+    }
+
+    return response;
+  } finally {
+    refreshing = null;
+  }
+}
+
+function clearClientSession() {
+  if (!COOKIE_AUTH_MODE) {
+    localStorage.removeItem("shulelink_access_token");
+    localStorage.removeItem("shulelink_refresh_token");
+  }
+  localStorage.removeItem("shulelink_user");
+  window.dispatchEvent(new Event("shulelink:logout"));
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
-    const hasRefresh = COOKIE_AUTH_MODE || Boolean(localStorage.getItem("shulelink_refresh_token"));
-    if (error.response?.status !== 401 || original?._retry || !hasRefresh || original?.url?.includes("/auth/refresh")) {
+    const status = error.response?.status;
+
+    if (
+      status !== 401 ||
+      !original ||
+      original._retry ||
+      isPublicAuthRequest(original.url)
+    ) {
       return Promise.reject(error);
     }
 
     original._retry = true;
+
     try {
-      refreshing ||= COOKIE_AUTH_MODE
-        ? axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true, headers: { "X-CSRF-Token": await ensureCsrf() } })
-        : axios.post(`${API_BASE_URL}/auth/refresh`, { refresh_token: localStorage.getItem("shulelink_refresh_token") });
-      const { data } = await refreshing;
-      refreshing = null;
+      const response = await refreshSession();
+
       if (!COOKIE_AUTH_MODE) {
-        localStorage.setItem("shulelink_access_token", data.access_token);
-        localStorage.setItem("shulelink_refresh_token", data.refresh_token);
-        original.headers.Authorization = `Bearer ${data.access_token}`;
+        original.headers = original.headers || {};
+        original.headers.Authorization = `Bearer ${response.data.access_token}`;
       }
+
       return api(original);
     } catch (refreshError) {
-      refreshing = null;
-      if (!COOKIE_AUTH_MODE) {
-        localStorage.removeItem("shulelink_access_token");
-        localStorage.removeItem("shulelink_refresh_token");
-      }
-      localStorage.removeItem("shulelink_user");
-      window.dispatchEvent(new Event("shulelink:logout"));
+      clearClientSession();
       return Promise.reject(refreshError);
     }
   },
