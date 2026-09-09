@@ -6,10 +6,10 @@ const apiPort = import.meta.env.VITE_API_PORT?.trim();
 const platformHost = import.meta.env.VITE_PLATFORM_HOST?.trim().toLowerCase();
 const rootDomain = import.meta.env.VITE_ROOT_DOMAIN?.trim().toLowerCase();
 const developmentDomain = import.meta.env.VITE_DEVELOPMENT_DOMAIN?.trim().toLowerCase();
-const developmentHosts = (import.meta.env.VITE_DEVELOPMENT_HOSTS || "")
-  .split(",")
-  .map((value) => value.trim().toLowerCase())
-  .filter(Boolean);
+const rawDevelopmentHosts = import.meta.env.VITE_DEVELOPMENT_HOSTS?.trim();
+const developmentHosts = rawDevelopmentHosts
+  ? rawDevelopmentHosts.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean)
+  : [];
 const configuredCookieMode = import.meta.env.VITE_AUTH_COOKIE_MODE;
 
 if (!apiPath || !apiPath.startsWith("/")) {
