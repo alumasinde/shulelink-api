@@ -5,7 +5,12 @@ const resource = (path) => ({
   create: async (payload) => (await api.post(path, payload)).data,
 })
 
-export const teachers = resource('/academics/teachers')
+export const teachers = {
+  ...resource('/academics/teachers'),
+  departmentSubjects: async (departmentId) => (await api.get(`/academics/departments/${departmentId}/subjects`)).data,
+  subjects: async (teacherId) => (await api.get(`/academics/teachers/${teacherId}/subjects`)).data,
+  updateSubjects: async (teacherId, subjectIds) => (await api.put(`/academics/teachers/${teacherId}/subjects`, { subject_ids: subjectIds })).data,
+}
 export const assignments = resource('/academics/assignments')
 export const rooms = { ...resource('/academics/timetable/rooms'), update: async (id,payload)=>(await api.put(`/academics/timetable/rooms/${id}`,payload)).data }
 export const periods = { ...resource('/academics/timetable/periods'), update: async (id,payload)=>(await api.put(`/academics/timetable/periods/${id}`,payload)).data }
