@@ -76,18 +76,17 @@ async def _create_admin(
                         f"A platform user with email {normalized_email} already exists."
                     )
 
+                # platform_roles is intentionally small and system-controlled.
+                # Its schema identifies roles by code/name; it does not expose an
+                # is_active column, so do not query a column that is not present.
                 await cur.execute(
-                    "SELECT id,name,is_active FROM platform_roles WHERE code=%s LIMIT 1",
+                    "SELECT id,name FROM platform_roles WHERE code=%s LIMIT 1",
                     (normalized_role,),
                 )
                 role = await cur.fetchone()
                 if not role:
                     raise ValueError(
                         f"Platform role '{normalized_role}' does not exist."
-                    )
-                if not role[2]:
-                    raise ValueError(
-                        f"Platform role '{normalized_role}' is not active."
                     )
 
                 await cur.execute(
