@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, HTTPException
 from app.core.dependencies import require_tenant_permission
 from app.modules.academics.schemas import *
 from app.modules.academics.service import *
@@ -14,10 +14,12 @@ def perm(code):
 read=perm('academics.read'); manage=perm('academics.manage'); teacher_read=perm('teachers.read'); teacher_manage=perm('teachers.manage'); assign_read=perm('assignments.read'); assign_manage=perm('assignments.manage'); tt_read=perm('timetable.read'); tt_manage=perm('timetable.manage'); tt_generate=perm('timetable.generate')
 
 @router.get('/teachers',response_model=list[TeacherResponse])
-async def teachers(tenant_id=Depends(teacher_read), status: str|None=Query(None,pattern='^(active|inactive|on_leave|terminated)$'), search: str|None=Query(None,max_length=100)): return await list_teachers(tenant_id,status,search)
+async def teachers(tenant_id=Depends(teacher_read), status: str|None=Query(None,pattern='^(active|inactive|on_leave|terminated)$'), search: str|None=Query(None,max_length=100)):
+    return await list_teachers(tenant_id,status,search)
 
 @router.get('/teachers/{teacher_id}',response_model=TeacherResponse)
-async def teacher(teacher_id:UUID,tenant_id=Depends(teacher_read)): return await get_teacher(tenant_id,teacher_id)
+async def teacher(teacher_id:UUID,tenant_id=Depends(teacher_read)):
+    item=await get_teacher(tenant_id,teacher_id); item['subjects']=await list_teacher_subjects(tenant_id,teacher_id); item['subject_ids']=[x['id'] for x in item['subjects']]; return item
 
 @router.get('/teachers/{teacher_id}/subjects')
 async def teacher_subjects(teacher_id:UUID,tenant_id=Depends(teacher_read)): return await list_teacher_subjects(tenant_id,teacher_id)
@@ -35,24 +37,18 @@ async def update_teacher_subjects(teacher_id:UUID,payload:dict,tenant_id=Depends
 
 @router.post('/teachers',response_model=TeacherResponse,status_code=status.HTTP_201_CREATED)
 async def create_teacher_route(payload:TeacherCreate,tenant_id=Depends(teacher_manage)):
-    p=payload.model_dump(); subject_ids=p.pop('subject_ids',[])
-    teacher=await create_teacher(tenant_id,p)
-    await replace_teacher_subjects(tenant_id,teacher['id'],subject_ids)
-    return await get_teacher(tenant_id,teacher['id'])
+    p=payload.model_dump(); subject_ids=p.pop('subject_ids',[]); teacher=await create_teacher(tenant_id,p); await replace_teacher_subjects(tenant_id,teacher['id'],subject_ids); return await teacher(teacher['id'],tenant_id)
 
 @router.patch('/teachers/{teacher_id}',response_model=TeacherResponse)
 async def update_teacher_route(teacher_id:UUID,payload:TeacherUpdate,tenant_id=Depends(teacher_manage)):
-    p=payload.model_dump(exclude_unset=True); subject_ids=p.pop('subject_ids',None)
-    teacher=await update_teacher(tenant_id,teacher_id,p)
+    p=payload.model_dump(exclude_unset=True); subject_ids=p.pop('subject_ids',None); await update_teacher(tenant_id,teacher_id,p)
     if subject_ids is not None: await replace_teacher_subjects(tenant_id,teacher_id,subject_ids)
-    return await get_teacher(tenant_id,teacher_id)
+    return await teacher(teacher_id,tenant_id)
 
 @router.get('/assignments',response_model=list[AssignmentResponse])
 async def assignments(tenant_id=Depends(assign_read),academic_year_id:UUID|None=None,academic_term_id:UUID|None=None,teacher_id:UUID|None=None,class_level_id:UUID|None=None): return await list_assignments(tenant_id,academic_year_id,academic_term_id,teacher_id,class_level_id)
-
 @router.post('/assignments',response_model=AssignmentResponse,status_code=status.HTTP_201_CREATED)
 async def create_assignment_route(payload:AssignmentCreate,tenant_id=Depends(assign_manage)): return await create_assignment(tenant_id,payload.model_dump())
-
 @router.delete('/assignments/{assignment_id}',status_code=status.HTTP_204_NO_CONTENT)
 async def delete_assignment_route(assignment_id:UUID,tenant_id=Depends(assign_manage)): await delete_assignment(tenant_id,assignment_id)
 
