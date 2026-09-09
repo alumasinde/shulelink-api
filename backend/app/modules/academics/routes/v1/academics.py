@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query, status
 from app.core.dependencies import require_tenant_permission
 from app.modules.academics.schemas import *
 from app.modules.academics.service import *
+from app.modules.academics.teacher_subjects import list_teacher_subjects, replace_teacher_subjects, list_department_subjects
 
 router=APIRouter(prefix='/academics',tags=['Academics'])
 
@@ -18,11 +19,33 @@ async def teachers(tenant_id=Depends(teacher_read), status: str|None=Query(None,
 @router.get('/teachers/{teacher_id}',response_model=TeacherResponse)
 async def teacher(teacher_id:UUID,tenant_id=Depends(teacher_read)): return await get_teacher(tenant_id,teacher_id)
 
+@router.get('/teachers/{teacher_id}/subjects')
+async def teacher_subjects(teacher_id:UUID,tenant_id=Depends(teacher_read)): return await list_teacher_subjects(tenant_id,teacher_id)
+
+@router.get('/departments/{department_id}/subjects')
+async def department_subjects(department_id:UUID,tenant_id=Depends(teacher_read)): return await list_department_subjects(tenant_id,department_id)
+
+@router.put('/teachers/{teacher_id}/subjects')
+async def update_teacher_subjects(teacher_id:UUID,payload:dict,tenant_id=Depends(teacher_manage)):
+    subject_ids=payload.get('subject_ids',[])
+    if not isinstance(subject_ids,list): raise HTTPException(422,'subject_ids must be an array')
+    try: ids=[UUID(x) for x in subject_ids]
+    except (ValueError,TypeError): raise HTTPException(422,'subject_ids must contain valid UUIDs')
+    return await replace_teacher_subjects(tenant_id,teacher_id,ids)
+
 @router.post('/teachers',response_model=TeacherResponse,status_code=status.HTTP_201_CREATED)
-async def create_teacher_route(payload:TeacherCreate,tenant_id=Depends(teacher_manage)): return await create_teacher(tenant_id,payload.model_dump())
+async def create_teacher_route(payload:TeacherCreate,tenant_id=Depends(teacher_manage)):
+    p=payload.model_dump(); subject_ids=p.pop('subject_ids',[])
+    teacher=await create_teacher(tenant_id,p)
+    await replace_teacher_subjects(tenant_id,teacher['id'],subject_ids)
+    return await get_teacher(tenant_id,teacher['id'])
 
 @router.patch('/teachers/{teacher_id}',response_model=TeacherResponse)
-async def update_teacher_route(teacher_id:UUID,payload:TeacherUpdate,tenant_id=Depends(teacher_manage)): return await update_teacher(tenant_id,teacher_id,payload.model_dump(exclude_unset=True))
+async def update_teacher_route(teacher_id:UUID,payload:TeacherUpdate,tenant_id=Depends(teacher_manage)):
+    p=payload.model_dump(exclude_unset=True); subject_ids=p.pop('subject_ids',None)
+    teacher=await update_teacher(tenant_id,teacher_id,p)
+    if subject_ids is not None: await replace_teacher_subjects(tenant_id,teacher_id,subject_ids)
+    return await get_teacher(tenant_id,teacher_id)
 
 @router.get('/assignments',response_model=list[AssignmentResponse])
 async def assignments(tenant_id=Depends(assign_read),academic_year_id:UUID|None=None,academic_term_id:UUID|None=None,teacher_id:UUID|None=None,class_level_id:UUID|None=None): return await list_assignments(tenant_id,academic_year_id,academic_term_id,teacher_id,class_level_id)
@@ -35,30 +58,21 @@ async def delete_assignment_route(assignment_id:UUID,tenant_id=Depends(assign_ma
 
 @router.get('/timetable/rooms',response_model=list[RoomResponse])
 async def rooms(tenant_id=Depends(tt_read)): return await list_rooms(tenant_id)
-
 @router.post('/timetable/rooms',response_model=RoomResponse,status_code=status.HTTP_201_CREATED)
 async def create_room_route(payload:RoomCreate,tenant_id=Depends(tt_manage)): return await create_room(tenant_id,payload.model_dump())
-
 @router.put('/timetable/rooms/{room_id}',response_model=RoomResponse)
 async def update_room_route(room_id:UUID,payload:RoomUpdate,tenant_id=Depends(tt_manage)): return await update_room(tenant_id,room_id,payload.model_dump())
-
 @router.get('/timetable/periods',response_model=list[PeriodResponse])
 async def periods(tenant_id=Depends(tt_read)): return await list_periods(tenant_id)
-
 @router.post('/timetable/periods',response_model=PeriodResponse,status_code=status.HTTP_201_CREATED)
 async def create_period_route(payload:PeriodCreate,tenant_id=Depends(tt_manage)): return await create_period(tenant_id,payload.model_dump())
-
 @router.put('/timetable/periods/{period_id}',response_model=PeriodResponse)
 async def update_period_route(period_id:UUID,payload:PeriodUpdate,tenant_id=Depends(tt_manage)): return await update_period(tenant_id,period_id,payload.model_dump())
-
 @router.get('/timetable',response_model=list[TimetableResponse])
 async def timetable(tenant_id=Depends(tt_read),academic_term_id:UUID|None=None,class_level_id:UUID|None=None,stream_id:UUID|None=None,day_of_week:int|None=Query(None,ge=1,le=7)): return await list_timetable(tenant_id,academic_term_id,class_level_id,stream_id,day_of_week)
-
 @router.post('/timetable',response_model=TimetableResponse,status_code=status.HTTP_201_CREATED)
 async def create_timetable_route(payload:TimetableCreate,tenant_id=Depends(tt_manage)): return await create_timetable(tenant_id,payload.model_dump())
-
 @router.delete('/timetable/{entry_id}',status_code=status.HTTP_204_NO_CONTENT)
 async def delete_timetable_route(entry_id:UUID,tenant_id=Depends(tt_manage)): await delete_timetable(tenant_id,entry_id)
-
 @router.post('/timetable/generate',response_model=GenerateResponse)
 async def generate(payload:GenerateRequest,tenant_id=Depends(tt_generate)): return await generate_timetable(tenant_id,payload.model_dump())
