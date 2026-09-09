@@ -107,12 +107,19 @@ export const useAuthStore = defineStore("auth", () => {
     localStorage.removeItem(USER_KEY);
   }
 
-  // A logout in another browser tab must invalidate this tab's in-memory state.
+  // The API client uses a custom event for same-tab logout and localStorage
+  // changes propagate logout state to other tabs without sharing token values.
   function handleExternalLogout() {
     clear();
   }
 
   window.addEventListener(AUTH_EVENT, handleExternalLogout);
+  window.addEventListener("storage", (event) => {
+    if (event.key === USER_KEY && event.newValue === null) handleExternalLogout();
+    if (!COOKIE_AUTH_MODE && (event.key === ACCESS_KEY || event.key === REFRESH_KEY) && event.newValue === null) {
+      handleExternalLogout();
+    }
+  });
 
   return {
     accessToken,
