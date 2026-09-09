@@ -62,7 +62,7 @@ def make_settings(**overrides):
 def test_development_configuration_is_explicit():
     settings = make_settings()
     assert settings.app_env == "development"
-    assert settings.trusted_host_list == ["127.0.0.1", "localhost"]
+    assert settings.trusted_host_list == ["localhost", "127.0.0.1"]
     assert settings.cors_origin_list == ["http://localhost:5173"]
 
 
