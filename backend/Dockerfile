@@ -12,7 +12,9 @@ RUN groupadd --system --gid 10001 shulelink \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# The migration runner reads raw SQL from /app/database/migrations.
 COPY app ./app
+COPY database ./database
 
 RUN chown -R 10001:10001 /app
 USER 10001:10001
