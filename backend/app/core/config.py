@@ -38,8 +38,9 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]: return self._split(self.cors_origins)
     @property
     def trusted_host_list(self) -> list[str]:
-        hosts=set(self._split(self.trusted_hosts)); hosts.update({"localhost","127.0.0.1","admin.localhost","*.localhost"}); hosts.add(self.platform_admin_host.lower()); hosts.add(f"*.{self.root_domain.lower()}"); return sorted(hosts)
-
+        hosts=set(self._split(self.trusted_hosts)); hosts.update({"localhost","127.0.0.1","admin.localhost","*.localhost"});
+        if self.app_env.lower() != "production": hosts.add("testserver")
+        hosts.add(self.platform_admin_host.lower()); hosts.add(f"*.{self.root_domain.lower()}"); return sorted(hosts)
 @lru_cache
 def get_settings() -> Settings: return Settings()
-settings = get_settings()
+settings=get_settings()
