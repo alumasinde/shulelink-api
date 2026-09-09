@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import getpass
 import sys
+from uuid import uuid4
 
 from pymysql.err import IntegrityError
 
@@ -13,6 +14,7 @@ from app.core.database import close_database, get_central_pool, initialize_datab
 from app.core.security import hash_password, validate_password
 
 DEFAULT_ROLE = "platform_admin"
+PLATFORM_ADMIN_ROLE_ID = "00000000-0000-0000-0000-000000000001"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -58,7 +60,7 @@ async def _create_admin(
     email: str,
     password: str,
     role_code: str,
-) -> int:
+) -> str:
     pool = get_central_pool()
     normalized_email = email.lower().strip()
     normalized_role = role_code.lower().strip()
@@ -76,9 +78,6 @@ async def _create_admin(
                         f"A platform user with email {normalized_email} already exists."
                     )
 
-                # platform_roles is intentionally small and system-controlled.
-                # Its schema identifies roles by code/name; it does not expose an
-                # is_active column, so do not query a column that is not present.
                 await cur.execute(
                     "SELECT id,name FROM platform_roles WHERE code=%s LIMIT 1",
                     (normalized_role,),
@@ -89,32 +88,33 @@ async def _create_admin(
                         f"Platform role '{normalized_role}' does not exist."
                     )
 
+                user_id = str(uuid4())
                 await cur.execute(
                     """
                     INSERT INTO platform_users
-                        (first_name,last_name,email,password_hash,status)
-                    VALUES (%s,%s,%s,%s,'active')
+                        (id,first_name,last_name,email,password_hash,status)
+                    VALUES (%s,%s,%s,%s,%s,'active')
                     """,
                     (
+                        user_id,
                         first_name.strip(),
                         last_name.strip(),
                         normalized_email,
                         hash_password(password),
                     ),
                 )
-                user_id = cur.lastrowid
 
                 await cur.execute(
                     """
                     INSERT INTO platform_user_roles
-                        (platform_user_id,role_id)
+                        (platform_user_id,platform_role_id)
                     VALUES (%s,%s)
                     """,
                     (user_id, role[0]),
                 )
 
                 await conn.commit()
-                return int(user_id)
+                return user_id
         except IntegrityError as exc:
             await conn.rollback()
             raise ValueError(
