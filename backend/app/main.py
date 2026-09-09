@@ -25,7 +25,10 @@ async def lifespan(_: FastAPI):
         await initialize_database()
         logger.info("database pool initialized", extra={"event": "database_pool_ready"})
     except Exception:
-        logger.exception("database initialization failed; readiness will remain unavailable", extra={"event": "database_pool_failed"})
+        logger.exception(
+            "database initialization failed; readiness will remain unavailable",
+            extra={"event": "database_pool_failed"},
+        )
     yield
     await close_tenant_pools()
     await close_database()
@@ -50,7 +53,7 @@ def create_app() -> FastAPI:
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
-        allow_origin_regex=r"^https?://([a-z0-9-]+\.)?localhost:5173$|^https://([a-z0-9-]+\.)?shulelink\.co\.ke$",
+        allow_origin_regex=settings.cors_origin_regex,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID", "X-CSRF-Token"],
