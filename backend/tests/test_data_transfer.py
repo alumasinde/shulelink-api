@@ -1,7 +1,8 @@
-from io import BytesIO
+from datetime import date
 
 from openpyxl import load_workbook
 
+from app.modules.data_transfer.academic_years import resolve_import_academic_year
 from app.modules.data_transfer.school_structure import DISPLAY_HEADERS, SHEETS, _parse_rows, build_template
 
 
@@ -28,3 +29,38 @@ def test_parser_accepts_empty_valid_workbook():
     assert errors == []
     assert set(parsed) == set(SHEETS)
     assert all(rows == [] for rows in parsed.values())
+
+
+class _AcademicYearCursor:
+    def __init__(self):
+        self.calls = []
+        self.result = None
+
+    async def execute(self, sql, args):
+        self.calls.append((sql, args))
+        if "name=%s" in sql:
+            self.result = None
+        else:
+            self.result = [("2026/2026",)]
+
+    async def fetchone(self):
+        return self.result
+
+    async def fetchall(self):
+        return self.result or []
+
+
+async def test_four_digit_year_resolves_to_calendar_year_academic_year():
+    cursor = _AcademicYearCursor()
+    tenant_id = "tenant-id"
+
+    name = await resolve_import_academic_year(cursor, tenant_id, 2026)
+
+    assert name == "2026/2026"
+    assert cursor.calls[1][1] == (
+        tenant_id,
+        date(2026, 1, 1),
+        date(2027, 1, 1),
+        date(2026, 1, 1),
+        date(2027, 1, 1),
+    )
