@@ -1,15 +1,31 @@
 from uuid import UUID
+import ssl
+
 import aiomysql
 from fastapi import HTTPException
+
+from app.core.config import settings
+from app.core.crypto import decrypt_secret
 from app.core.database import get_pool
 
 _pools: dict[str, aiomysql.Pool] = {}
 
+
+def _ssl_context() -> ssl.SSLContext | None:
+    if not settings.db_ssl_ca:
+        return None
+    context = ssl.create_default_context(cafile=settings.db_ssl_ca)
+    if not settings.db_ssl_verify:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    return context
+
+
 async def get_tenant_pool(tenant_id: UUID) -> aiomysql.Pool:
-    """Resolve the tenant database without allowing the request to choose a database directly.
-    Shared tenants use the central pool. Dedicated tenants use their registered database target.
-    Dedicated credential decryption/provisioning is intentionally isolated here so business modules
-    never need to know how tenant databases are selected.
+    """Resolve a tenant DB from the server-side tenant registry only.
+
+    Shared tenants use the central pool. Dedicated tenants use encrypted credentials
+    stored in the central catalog. No request field can select a database directly.
     """
     central = get_pool()
     async with central.acquire() as conn:
@@ -22,13 +38,33 @@ async def get_tenant_pool(tenant_id: UUID) -> aiomysql.Pool:
         return central
     if not all(row[1:6]):
         raise HTTPException(status_code=503, detail="Dedicated tenant database is not provisioned")
+
     key = str(tenant_id)
     existing = _pools.get(key)
     if existing:
         return existing
-    # The password field is expected to contain an application-encrypted secret once dedicated
-    # database provisioning is enabled. Fail closed rather than treating it as plaintext.
-    raise HTTPException(status_code=503, detail="Dedicated tenant database credentials are not provisioned")
+
+    try:
+        password = decrypt_secret(row[5])
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Dedicated tenant database credentials are unavailable") from exc
+
+    kwargs = dict(
+        host=row[1], port=int(row[2]), db=row[3], user=row[4], password=password,
+        minsize=settings.db_pool_min_size, maxsize=settings.db_pool_max_size,
+        pool_recycle=settings.db_pool_recycle_seconds,
+        connect_timeout=settings.db_connect_timeout_seconds,
+        read_timeout=settings.db_read_timeout_seconds,
+        write_timeout=settings.db_write_timeout_seconds,
+        autocommit=True, charset="utf8mb4", use_unicode=True,
+    )
+    ssl_context = _ssl_context()
+    if ssl_context is not None:
+        kwargs["ssl"] = ssl_context
+    pool = await aiomysql.create_pool(**kwargs)
+    _pools[key] = pool
+    return pool
+
 
 async def close_tenant_pools() -> None:
     for pool in list(_pools.values()):
