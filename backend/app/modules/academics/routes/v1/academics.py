@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query, status, HTTPException
 from app.core.dependencies import require_tenant_permission
 from app.modules.academics.schemas import *
 from app.modules.academics.service import *
+from app.modules.academics.bulk import bulk_update_teachers, bulk_replace_teacher_subjects
 from app.modules.academics.teacher_subjects import list_teacher_subjects, replace_teacher_subjects, list_department_subjects
 
 router=APIRouter(prefix='/academics',tags=['Academics'])
@@ -35,6 +36,14 @@ async def update_teacher_subjects(teacher_id:UUID,payload:dict,tenant_id=Depends
     except (ValueError,TypeError): raise HTTPException(422,'subject_ids must contain valid UUIDs')
     if not 1 <= len(ids) <= 2: raise HTTPException(422,'Select one or two subjects for the teacher')
     return await replace_teacher_subjects(tenant_id,teacher_id,ids)
+
+@router.post('/teachers/bulk-update')
+async def bulk_update_teachers_route(payload:BulkTeacherUpdate,tenant_id=Depends(teacher_manage)):
+    return await bulk_update_teachers(tenant_id,payload.teacher_ids,payload.model_dump(exclude={'teacher_ids'}, exclude_none=True))
+
+@router.put('/teachers/bulk-subjects')
+async def bulk_teacher_subjects_route(payload:BulkTeacherSubjects,tenant_id=Depends(teacher_manage)):
+    return await bulk_replace_teacher_subjects(tenant_id,payload.teacher_ids,payload.subject_ids)
 
 @router.post('/teachers',response_model=TeacherResponse,status_code=status.HTTP_201_CREATED)
 async def create_teacher_route(payload:TeacherCreate,tenant_id=Depends(teacher_manage)):
