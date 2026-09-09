@@ -61,6 +61,22 @@ class TeacherResponse(TeacherCreate):
     department_name: str | None = None
     subjects: list[dict] = Field(default_factory=list)
 
+class BulkTeacherUpdate(BaseModel):
+    teacher_ids: list[UUID] = Field(min_length=1, max_length=500)
+    department_id: UUID | None = None
+    employment_type: str | None = Field(default=None, max_length=60)
+    status: str | None = Field(default=None, pattern='^(active|inactive|on_leave|terminated)$')
+    gender: str | None = Field(default=None, pattern='^(male|female|other|unspecified)$')
+
+class BulkTeacherSubjects(BaseModel):
+    teacher_ids: list[UUID] = Field(min_length=1, max_length=500)
+    subject_ids: list[UUID] = Field(min_length=1, max_length=2)
+    @field_validator('teacher_ids','subject_ids')
+    @classmethod
+    def unique_ids(cls, v):
+        if len({str(x) for x in v}) != len(v): raise ValueError('Duplicate IDs are not allowed')
+        return v
+
 class AssignmentCreate(BaseModel):
     teacher_id: UUID
     academic_year_id: UUID
