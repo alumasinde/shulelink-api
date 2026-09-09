@@ -33,22 +33,29 @@ async def update_teacher_subjects(teacher_id:UUID,payload:dict,tenant_id=Depends
     if not isinstance(subject_ids,list): raise HTTPException(422,'subject_ids must be an array')
     try: ids=[UUID(x) for x in subject_ids]
     except (ValueError,TypeError): raise HTTPException(422,'subject_ids must contain valid UUIDs')
+    if not 1 <= len(ids) <= 2: raise HTTPException(422,'Select one or two subjects for the teacher')
     return await replace_teacher_subjects(tenant_id,teacher_id,ids)
 
 @router.post('/teachers',response_model=TeacherResponse,status_code=status.HTTP_201_CREATED)
 async def create_teacher_route(payload:TeacherCreate,tenant_id=Depends(teacher_manage)):
-    p=payload.model_dump(); subject_ids=p.pop('subject_ids',[]); teacher=await create_teacher(tenant_id,p); await replace_teacher_subjects(tenant_id,teacher['id'],subject_ids); return await teacher(teacher['id'],tenant_id)
+    p=payload.model_dump(); subject_ids=p.pop('subject_ids',[]); teacher=await create_teacher(tenant_id,p)
+    if subject_ids: await replace_teacher_subjects(tenant_id,teacher['id'],subject_ids)
+    return await teacher(teacher['id'],tenant_id)
 
 @router.patch('/teachers/{teacher_id}',response_model=TeacherResponse)
 async def update_teacher_route(teacher_id:UUID,payload:TeacherUpdate,tenant_id=Depends(teacher_manage)):
     p=payload.model_dump(exclude_unset=True); subject_ids=p.pop('subject_ids',None); await update_teacher(tenant_id,teacher_id,p)
     if subject_ids is not None: await replace_teacher_subjects(tenant_id,teacher_id,subject_ids)
+    elif 'department_id' in p: await replace_teacher_subjects(tenant_id,teacher_id,[])
     return await teacher(teacher_id,tenant_id)
 
 @router.get('/assignments',response_model=list[AssignmentResponse])
 async def assignments(tenant_id=Depends(assign_read),academic_year_id:UUID|None=None,academic_term_id:UUID|None=None,teacher_id:UUID|None=None,class_level_id:UUID|None=None): return await list_assignments(tenant_id,academic_year_id,academic_term_id,teacher_id,class_level_id)
 @router.post('/assignments',response_model=AssignmentResponse,status_code=status.HTTP_201_CREATED)
-async def create_assignment_route(payload:AssignmentCreate,tenant_id=Depends(assign_manage)): return await create_assignment(tenant_id,payload.model_dump())
+async def create_assignment_route(payload:AssignmentCreate,tenant_id=Depends(assign_manage)):
+    allowed={x['id'] for x in await list_teacher_subjects(tenant_id,payload.teacher_id)}
+    if str(payload.subject_id) not in allowed: raise HTTPException(400,'Teacher is not configured to teach this subject. Configure the teacher subjects first.')
+    return await create_assignment(tenant_id,payload.model_dump())
 @router.delete('/assignments/{assignment_id}',status_code=status.HTTP_204_NO_CONTENT)
 async def delete_assignment_route(assignment_id:UUID,tenant_id=Depends(assign_manage)): await delete_assignment(tenant_id,assignment_id)
 
