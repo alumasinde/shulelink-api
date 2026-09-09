@@ -39,8 +39,9 @@ class Settings(BaseSettings):
     def cors_origin_list(self)->list[str]:return [x.strip() for x in self.cors_origins.split(',') if x.strip()]
     @property
     def trusted_host_list(self)->list[str]:
-        # Wildcards are kept before explicit hosts for deterministic configuration/testing; Starlette does not require ordering.
-        return sorted(self._split(self.trusted_hosts),key=lambda x:(0 if '*' in x else 1,x))
+        items=self._split(self.trusted_hosts)
+        wildcards=[x for x in items if '*' in x];others=[x for x in items if '*' not in x]
+        return wildcards+others
 @lru_cache
 def get_settings()->Settings:return Settings()
 settings=get_settings()
