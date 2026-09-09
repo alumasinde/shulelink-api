@@ -9,9 +9,10 @@ const auth = useAuthStore();
 const context = ref(null);
 const loading = ref(true);
 const error = ref("");
-const counts = ref({ campuses: 0, academicYears: 0, terms: 0, classes: 0, streams: 0, subjects: 0, departments: 0 });
+const counts = ref({ campuses: 0, academicYears: 0, academicYearsData: [], terms: 0, classes: 0, streams: 0, subjects: 0, departments: 0 });
 const hostname = computed(() => window.location.hostname);
 const firstName = computed(() => auth.user?.first_name || "there");
+const tenantLabel = computed(() => context.value?.name || context.value?.slug || hostname.value.split(".")[0] || "School");
 const currentYear = computed(() => {
   const years = counts.value.academicYearsData || [];
   return years.find((item) => item.is_current) || years[0] || null;
@@ -91,7 +92,7 @@ onMounted(loadDashboard);
       <section class="welcome-banner mb-4">
         <div class="welcome-copy">
           <div class="banner-label"><i class="bi bi-building me-2"></i>YOUR SCHOOL</div>
-          <h2>{{ context?.name || tenantLabel }}</h2>
+          <h2>{{ tenantLabel }}</h2>
           <p>Set up your school foundation once, then build students, academics, attendance and fees on top of it.</p>
           <router-link to="/school/structure" class="banner-link">Open School Structure <i class="bi bi-arrow-right ms-2"></i></router-link>
         </div>
