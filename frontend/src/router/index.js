@@ -8,6 +8,7 @@ import TenantsView from "../views/platform/TenantsView.vue";
 import RoleDashboardView from "../views/tenant/RoleDashboardView.vue";
 import RolePortalView from "../views/tenant/RolePortalView.vue";
 import SchoolStructureView from "../views/tenant/SchoolStructureView.vue";
+import DataTransferView from "../views/tenant/DataTransferView.vue";
 import StudentsView from "../views/tenant/StudentsView.vue";
 import GuardiansView from "../views/tenant/GuardiansView.vue";
 import PortalAccountsView from "../views/tenant/PortalAccountsView.vue";
@@ -33,6 +34,7 @@ const router = createRouter({
     { path: "/school", name: "tenant-dashboard", component: RoleDashboardView, meta: { auth: true, tenant: true } },
     { path: "/school/portal", name: "role-portal", component: RolePortalView, meta: { auth: true, tenant: true } },
     { path: "/school/structure", name: "school-structure", component: SchoolStructureView, meta: { auth: true, tenant: true } },
+    { path: "/school/data-transfer", name: "school-data-transfer", component: DataTransferView, meta: { auth: true, tenant: true, permission: "school.structure.manage" } },
     { path: "/school/students", name: "students", component: StudentsView, meta: { auth: true, tenant: true } },
     { path: "/school/guardians", name: "guardians", component: GuardiansView, meta: { auth: true, tenant: true } },
     { path: "/school/portal-accounts", name: "portal-accounts", component: PortalAccountsView, meta: { auth: true, tenant: true, permission: "accounts.manage" } },
