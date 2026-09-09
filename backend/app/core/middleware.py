@@ -9,6 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
+from app.core.database import reset_request_pool
 from app.core.logging import logger, request_id_context
 
 
@@ -39,20 +40,10 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             logger.exception("request failed", extra={"event": "http_request_failed", "method": request.method, "path": request.url.path, "status_code": 500, "client_ip": request.client.host if request.client else None})
             raise
         finally:
-            logger.info(
-                "request completed",
-                extra={
-                    "event": "http_request",
-                    "method": request.method,
-                    "path": request.url.path,
-                    "status_code": status_code,
-                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
-                    "client_ip": request.client.host if request.client else None,
-                    "user_id": getattr(request.state, "user_id", None),
-                    "user_type": getattr(request.state, "user_type", None),
-                    "tenant_id": getattr(request.state, "tenant_id", None),
-                },
-            )
+            logger.info("request completed", extra={"event": "http_request", "method": request.method, "path": request.url.path, "status_code": status_code, "duration_ms": round((time.perf_counter() - started) * 1000, 2), "client_ip": request.client.host if request.client else None, "user_id": getattr(request.state, "user_id", None), "user_type": getattr(request.state, "user_type", None), "tenant_id": getattr(request.state, "tenant_id", None)})
+            pool_token = getattr(request.state, "tenant_pool_token", None)
+            if pool_token is not None:
+                reset_request_pool(pool_token)
             request_id_context.reset(token)
             if response is not None:
                 response.headers["X-Request-ID"] = request_id
@@ -60,8 +51,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 response.headers["X-Frame-Options"] = "DENY"
                 response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
                 response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-                if request.url.path.startswith(settings.api_v1_prefix):
-                    response.headers["Cache-Control"] = "no-store"
+                if request.url.path.startswith(settings.api_v1_prefix): response.headers["Cache-Control"] = "no-store"
 
 
 class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
@@ -74,5 +64,5 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
                     return JSONResponse(status_code=413, content={"success": False, "error": {"code": "REQUEST_TOO_LARGE", "message": "Request body too large"}, "request_id": request_id}, headers={"X-Request-ID": request_id})
             except ValueError:
                 request_id = getattr(request.state, "request_id", "unknown")
-                return JSONResponse(status_code=400, content={"success": False, "error": {"code": "INVALID_CONTENT_LENGTH", "message": "Invalid Content-Length header"}, "request_id": request_id}, headers={"X-Request-ID": request_id})
+                return JSONResponse(status_code=400, content={"success": False, "error": {"code": "INVALID_CONTENT_LENGTH", "message": "Invalid Content-Length header"}, "request_id": request_id})
         return await call_next(request)

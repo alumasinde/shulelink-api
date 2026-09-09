@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { COOKIE_AUTH_MODE } from "../api/client";
 import HomeView from "../views/HomeView.vue";
 import LoginView from "../views/auth/LoginView.vue";
 import ActivateAccountView from "../views/auth/ActivateAccountView.vue";
@@ -26,5 +27,5 @@ const router=createRouter({history:createWebHistory(),routes:[
  {path:"/school/portal-accounts",name:"portal-accounts",component:PortalAccountsView,meta:{auth:true,tenant:true,permission:"accounts.manage"}},
  {path:"/:pathMatch(.*)*",redirect:"/"},
 ]});
-router.beforeEach(async(to)=>{const auth=useAuthStore();if(!auth.user&&auth.isAuthenticated)await auth.hydrate();if(to.meta.guestOnly&&auth.isAuthenticated)return isPlatformHost()?"/platform":portalPath(auth.user);if(to.meta.auth&&!auth.isAuthenticated)return `/login?redirect=${encodeURIComponent(to.fullPath)}`;if(to.meta.platform&&(!isPlatformHost()||!auth.isPlatform))return auth.isAuthenticated?portalPath(auth.user):"/login";if(to.meta.tenant&&isPlatformHost())return auth.isAuthenticated?"/platform":"/login";if(to.meta.permission&&!auth.user?.permissions?.includes(to.meta.permission))return auth.isAuthenticated?portalPath(auth.user):"/login";});
+router.beforeEach(async(to)=>{const auth=useAuthStore();if(COOKIE_AUTH_MODE||auth.isAuthenticated)await auth.hydrate();if(to.meta.guestOnly&&auth.isAuthenticated)return isPlatformHost()?"/platform":portalPath(auth.user);if(to.meta.auth&&!auth.isAuthenticated)return `/login?redirect=${encodeURIComponent(to.fullPath)}`;if(to.meta.platform&&(!isPlatformHost()||!auth.isPlatform))return auth.isAuthenticated?portalPath(auth.user):"/login";if(to.meta.tenant&&isPlatformHost())return auth.isAuthenticated?"/platform":"/login";if(to.meta.permission&&!auth.user?.permissions?.includes(to.meta.permission))return auth.isAuthenticated?portalPath(auth.user):"/login";});
 export default router;

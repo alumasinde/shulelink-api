@@ -15,41 +15,53 @@ FIELDS={
 
 def _value(v): return str(v) if isinstance(v,UUID) else v
 
-async def _clear_current(table,tenant_id,exclude_id=None):
-    pool=get_pool()
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            sql=f'UPDATE {table} SET is_current=0 WHERE tenant_id=%s'; args=[str(tenant_id)]
-            if exclude_id: sql+=' AND id<>%s'; args.append(str(exclude_id))
-            await cur.execute(sql,args)
-
 async def update_item(table,tenant_id,item_id,data):
     if table not in FIELDS: raise HTTPException(400,'Unsupported record type')
     data={k:v for k,v in data.items() if k in FIELDS[table]}
     if not data: return await get_item(table,tenant_id,item_id)
     pool=get_pool()
     async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(f'SELECT id FROM {table} WHERE id=%s AND tenant_id=%s',(str(item_id),str(tenant_id)))
-            if not await cur.fetchone(): raise HTTPException(404,'Record not found')
-            if table=='academic_terms' and data.get('academic_year_id'):
-                await cur.execute('SELECT id FROM academic_years WHERE id=%s AND tenant_id=%s',(str(data['academic_year_id']),str(tenant_id)))
-                if not await cur.fetchone(): raise HTTPException(404,'Academic year not found')
-            if table=='streams' and data.get('class_level_id'):
-                await cur.execute('SELECT id FROM class_levels WHERE id=%s AND tenant_id=%s',(str(data['class_level_id']),str(tenant_id)))
-                if not await cur.fetchone(): raise HTTPException(404,'Class level not found')
-            if table=='subjects' and data.get('department_id'):
-                await cur.execute('SELECT id FROM departments WHERE id=%s AND tenant_id=%s',(str(data['department_id']),str(tenant_id)))
-                if not await cur.fetchone(): raise HTTPException(404,'Department not found')
-    if table in {'academic_years','academic_terms'} and data.get('is_current') is True: await _clear_current(table,tenant_id,item_id)
-    assignments=','.join(f'{k}=%s' for k in data)
-    try:
-        async with pool.acquire() as conn:
+        try:
+            await conn.begin()
             async with conn.cursor() as cur:
-                await cur.execute(f'UPDATE {table} SET {assignments} WHERE id=%s AND tenant_id=%s',[*[_value(v) for v in data.values()],str(item_id),str(tenant_id)])
-    except Exception as exc:
-        if getattr(exc,'args',[None])[0]==1062: raise HTTPException(409,'A record with the same unique value already exists')
-        raise
+                await cur.execute(f'SELECT * FROM {table} WHERE id=%s AND tenant_id=%s FOR UPDATE',(str(item_id),str(tenant_id)))
+                row=await cur.fetchone()
+                if not row: raise HTTPException(404,'Record not found')
+
+                columns=[d[0] for d in cur.description]
+                current=dict(zip(columns,row))
+                final={**current,**data}
+
+                if table=='academic_years' and final.get('end_date')<=final.get('start_date'):
+                    raise HTTPException(422,'end_date must be after start_date')
+                if table=='academic_terms':
+                    await cur.execute('SELECT start_date,end_date FROM academic_years WHERE id=%s AND tenant_id=%s',(str(final['academic_year_id']),str(tenant_id)))
+                    academic_year=await cur.fetchone()
+                    if not academic_year: raise HTTPException(404,'Academic year not found')
+                    if final.get('end_date')<=final.get('start_date'):
+                        raise HTTPException(422,'end_date must be after start_date')
+                    if final['start_date']<academic_year[0] or final['end_date']>academic_year[1]:
+                        raise HTTPException(422,'Academic term dates must fall within the selected academic year')
+                if table=='streams':
+                    await cur.execute('SELECT id FROM class_levels WHERE id=%s AND tenant_id=%s',(str(final['class_level_id']),str(tenant_id)))
+                    if not await cur.fetchone(): raise HTTPException(404,'Class level not found')
+                if table=='subjects' and final.get('department_id'):
+                    await cur.execute('SELECT id FROM departments WHERE id=%s AND tenant_id=%s',(str(final['department_id']),str(tenant_id)))
+                    if not await cur.fetchone(): raise HTTPException(404,'Department not found')
+
+                if table in {'academic_years','academic_terms'} and data.get('is_current') is True:
+                    await cur.execute(f'UPDATE {table} SET is_current=0 WHERE tenant_id=%s AND id<>%s',(str(tenant_id),str(item_id)))
+
+                assignments=','.join(f'{k}=%s' for k in data)
+                try:
+                    await cur.execute(f'UPDATE {table} SET {assignments} WHERE id=%s AND tenant_id=%s',[*[_value(v) for v in data.values()],str(item_id),str(tenant_id)])
+                except Exception as exc:
+                    if getattr(exc,'args',[None])[0]==1062: raise HTTPException(409,'A record with the same unique value already exists')
+                    raise
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
     return await get_item(table,tenant_id,item_id)
 
 async def update_class_subject(tenant_id,item_id,is_compulsory):
