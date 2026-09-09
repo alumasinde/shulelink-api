@@ -119,6 +119,7 @@ class GenerateRequest(BaseModel):
     academic_term_id: UUID
     class_level_id: UUID | None = None
     stream_id: UUID | None = None
+    lessons_per_week: int = Field(default=3, ge=1, le=10)
     replace_existing: bool = False
 
 class GenerateResponse(BaseModel):
