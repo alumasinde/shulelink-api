@@ -4,8 +4,8 @@ const host = window.location.hostname;
 const isPlatformHost = ["admin.localhost", "admin.shulelink.co.ke", "localhost", "127.0.0.1"].includes(host);
 const configuredApi = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
 
-// Development may use bearer tokens. Production is always cookie based so
-// access and refresh credentials are not exposed to JavaScript storage.
+// Production is always cookie based. Bearer tokens are retained only for local
+// development so production credentials are never exposed to JavaScript storage.
 export const COOKIE_AUTH_MODE = import.meta.env.PROD || import.meta.env.VITE_AUTH_COOKIE_MODE === "true";
 
 function resolveApiBase() {
@@ -19,13 +19,13 @@ export const API_BASE_URL = resolveApiBase();
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: { "Content-Type": "application/json" },
   timeout: 15000,
   withCredentials: COOKIE_AUTH_MODE,
+  headers: { Accept: "application/json" },
 });
 
 const SAFE_METHODS = new Set(["get", "head", "options"]);
-const PUBLIC_AUTH_PATHS = [
+const PUBLIC_AUTH_PATHS = new Set([
   "/auth/login",
   "/auth/platform/login",
   "/auth/refresh",
@@ -34,16 +34,29 @@ const PUBLIC_AUTH_PATHS = [
   "/auth/password-reset/request",
   "/auth/password-reset/confirm",
   "/auth/mfa/verify",
-];
+]);
 
-function readCookie(name) {
-  const encoded = `${name}=`;
-  const item = document.cookie.split("; ").find((part) => part.startsWith(encoded));
-  return item ? decodeURIComponent(item.slice(encoded.length)) : null;
+function normalizePath(url = "") {
+  try {
+    return new URL(url, API_BASE_URL).pathname.replace(/\/$/, "") || "/";
+  } catch {
+    return String(url).split("?")[0].replace(/\/$/, "") || "/";
+  }
 }
 
 function isPublicAuthRequest(url = "") {
-  return PUBLIC_AUTH_PATHS.some((path) => url.includes(path));
+  return PUBLIC_AUTH_PATHS.has(normalizePath(url));
+}
+
+function readCookie(name) {
+  const encoded = `${name}=`;
+  const item = document.cookie.split("; ").find((part) => part.trim().startsWith(encoded));
+  if (!item) return null;
+  try {
+    return decodeURIComponent(item.trim().slice(encoded.length));
+  } catch {
+    return null;
+  }
 }
 
 let csrfPromise = null;
@@ -57,6 +70,7 @@ async function ensureCsrf() {
   csrfPromise ||= axios.get(`${API_BASE_URL}/auth/csrf`, {
     withCredentials: true,
     timeout: 15000,
+    headers: { Accept: "application/json" },
   });
 
   try {
@@ -76,7 +90,7 @@ api.interceptors.request.use(async (config) => {
       config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }
-  } else if (!SAFE_METHODS.has(method)) {
+  } else if (!SAFE_METHODS.has(method) && !isPublicAuthRequest(config.url)) {
     const csrf = await ensureCsrf();
     if (csrf) {
       config.headers = config.headers || {};
@@ -112,7 +126,7 @@ async function refreshSession() {
     return axios.post(
       `${API_BASE_URL}/auth/refresh`,
       { refresh_token: refreshToken },
-      { timeout: 15000 },
+      { timeout: 15000, headers: { Accept: "application/json" } },
     );
   })();
 
@@ -177,9 +191,34 @@ api.interceptors.response.use(
 );
 
 export function getApiError(error, fallback = "Something went wrong. Please try again.") {
-  const payload = error?.response?.data;
+  if (!error) return fallback;
+
+  const status = error.response?.status;
+  const payload = error.response?.data;
   const structured = payload?.error;
-  if (structured?.message) return structured.message;
-  if (Array.isArray(payload?.detail)) return payload.detail.map((item) => item.msg || String(item)).join(" ");
-  return payload?.detail || payload?.message || error?.message || fallback;
+
+  if (structured?.message && typeof structured.message === "string") return structured.message;
+
+  if (Array.isArray(payload?.detail)) {
+    const messages = payload.detail
+      .map((item) => (typeof item?.msg === "string" ? item.msg : null))
+      .filter(Boolean);
+    if (messages.length) return messages.join(" ");
+  }
+
+  if (typeof payload?.detail === "string") return payload.detail;
+  if (typeof payload?.message === "string") return payload.message;
+
+  if (error.code === "ECONNABORTED" || error.code === "ERR_NETWORK") {
+    return "The service is temporarily unavailable. Please check your connection and try again.";
+  }
+
+  if (status === 401) return "Your session has expired. Please sign in again.";
+  if (status === 403) return "You do not have permission to perform this action.";
+  if (status === 404) return "The requested resource was not found.";
+  if (status === 409) return "This operation conflicts with existing data.";
+  if (status === 429) return "Too many requests. Please wait and try again.";
+  if (status >= 500) return "The service encountered an error. Please try again shortly.";
+
+  return fallback;
 }
