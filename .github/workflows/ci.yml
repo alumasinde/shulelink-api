@@ -13,6 +13,49 @@ jobs:
         working-directory: backend
     env:
       PYTHONPATH: .
+      APP_ENV: test
+      DEBUG: "false"
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_NAME: shulelink_test
+      DB_USER: shulelink_test
+      DB_PASSWORD: ci-test-password
+      DB_SSL_VERIFY: "true"
+      DB_POOL_MIN_SIZE: "1"
+      DB_POOL_MAX_SIZE: "2"
+      DB_POOL_RECYCLE_SECONDS: "1800"
+      DB_CONNECT_TIMEOUT_SECONDS: "5"
+      DB_READ_TIMEOUT_SECONDS: "10"
+      DB_WRITE_TIMEOUT_SECONDS: "10"
+      CORS_ORIGINS: http://localhost:5173
+      CORS_ORIGIN_REGEX: ^https?://([a-z0-9-]+\.)?localhost:5173$
+      TRUSTED_HOSTS: localhost,127.0.0.1,admin.localhost,*.localhost
+      MAX_REQUEST_BODY_BYTES: "10485760"
+      LOG_LEVEL: INFO
+      RATE_LIMIT_STORAGE_URI: memory://
+      RATE_LIMIT_DEFAULT: 120/minute
+      JWT_SECRET_KEY: ci-test-secret-key-with-at-least-32-characters
+      JWT_ALGORITHM: HS256
+      JWT_ISSUER: shulelink-api-test
+      JWT_AUDIENCE: shulelink-test
+      ACCESS_TOKEN_MINUTES: "15"
+      REFRESH_TOKEN_DAYS: "30"
+      PASSWORD_MIN_LENGTH: "10"
+      AUTH_COOKIE_MODE: "false"
+      AUTH_COOKIE_SECURE: "false"
+      AUTH_COOKIE_SAMESITE: lax
+      CSRF_TOKEN_BYTES: "32"
+      AUTH_RESET_RETURN_TOKEN: "true"
+      PASSWORD_RESET_MINUTES: "30"
+      MFA_CHALLENGE_MINUTES: "5"
+      MFA_ISSUER: ShuleLink Test
+      SMTP_PORT: "587"
+      SMTP_STARTTLS: "true"
+      PASSWORD_RESET_BASE_URL: http://localhost:5173/reset-password
+      DB_PROVISIONER_PORT: "3306"
+      DB_PROVISIONER_TENANT_HOST: 127.0.0.1
+      PLATFORM_ADMIN_HOST: admin.localhost
+      ROOT_DOMAIN: localhost
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,6 +72,14 @@ jobs:
     defaults:
       run:
         working-directory: frontend
+    env:
+      VITE_API_PATH: /api/v1
+      VITE_API_PORT: "8000"
+      VITE_PLATFORM_HOST: admin.localhost
+      VITE_ROOT_DOMAIN: localhost
+      VITE_DEVELOPMENT_DOMAIN: localhost
+      VITE_DEVELOPMENT_HOSTS: admin.localhost,localhost,127.0.0.1
+      VITE_AUTH_COOKIE_MODE: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
