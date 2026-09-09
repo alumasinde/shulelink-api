@@ -13,13 +13,9 @@ import StudentsView from "../views/tenant/StudentsView.vue";
 import GuardiansView from "../views/tenant/GuardiansView.vue";
 import PortalAccountsView from "../views/tenant/PortalAccountsView.vue";
 import AcademicsView from "../views/tenant/AcademicsViewFixed.vue";
+import TeacherSubjectsView from "../views/tenant/TeacherSubjectsView.vue";
 
-const PLATFORM_HOSTS = new Set([
-  "admin.localhost",
-  "admin.shulelink.co.ke",
-  "localhost",
-  "127.0.0.1",
-]);
+const PLATFORM_HOSTS = new Set(["admin.localhost","admin.shulelink.co.ke","localhost","127.0.0.1"]);
 const isPlatformHost = () => PLATFORM_HOSTS.has(window.location.hostname);
 const portalPath = (user) => user?.user_type === "platform" ? "/platform" : "/school";
 
@@ -39,6 +35,7 @@ const router = createRouter({
     { path: "/school/guardians", name: "guardians", component: GuardiansView, meta: { auth: true, tenant: true } },
     { path: "/school/portal-accounts", name: "portal-accounts", component: PortalAccountsView, meta: { auth: true, tenant: true, permission: "accounts.manage" } },
     { path: "/school/academics", name: "academics", component: AcademicsView, meta: { auth: true, tenant: true, permission: "academics.read" } },
+    { path: "/school/academics/teacher-subjects", name: "teacher-subjects", component: TeacherSubjectsView, meta: { auth: true, tenant: true, permission: "teachers.manage" } },
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
   scrollBehavior() { return { top: 0 }; },
@@ -51,10 +48,8 @@ async function ensureHydrated(auth) {
   hydrationPromise ||= auth.hydrate().finally(() => { hydrated = true; hydrationPromise = null; });
   await hydrationPromise;
 }
-
 router.beforeEach(async (to) => {
-  const auth = useAuthStore();
-  await ensureHydrated(auth);
+  const auth = useAuthStore(); await ensureHydrated(auth);
   if (to.meta.guestOnly && auth.isAuthenticated) return isPlatformHost() ? "/platform" : portalPath(auth.user);
   if (to.meta.auth && !auth.isAuthenticated) return { path: "/login", query: { redirect: to.fullPath } };
   if (to.meta.platform && (!isPlatformHost() || !auth.isPlatform)) return auth.isAuthenticated ? portalPath(auth.user) : "/login";
