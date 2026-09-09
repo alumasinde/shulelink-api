@@ -23,14 +23,19 @@ async def replace_teacher_subjects(tenant_id: UUID, teacher_id: UUID, subject_id
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute('SELECT id,department_id FROM teachers WHERE id=%s AND tenant_id=%s', (sid(teacher_id), sid(tenant_id)))
-            if not await cur.fetchone():
-                raise HTTPException(404, 'Teacher not found')
+            teacher_row = await cur.fetchone()
+            if not teacher_row: raise HTTPException(404, 'Teacher not found')
+            department_id = sid(teacher_row[1])
+            if subject_ids and not department_id:
+                raise HTTPException(400, 'Assign a department to the teacher before selecting subjects')
             if subject_ids:
                 marks = ','.join(['%s'] * len(subject_ids))
-                await cur.execute(f'SELECT id FROM subjects WHERE tenant_id=%s AND id IN ({marks})', [sid(tenant_id), *subject_ids])
-                found = {sid(r[0]) for r in await cur.fetchall()}
-                if found != set(subject_ids):
-                    raise HTTPException(404, 'One or more selected subjects were not found')
+                await cur.execute(f'SELECT id,department_id FROM subjects WHERE tenant_id=%s AND id IN ({marks})', [sid(tenant_id), *subject_ids])
+                rows = await cur.fetchall()
+                found = {sid(r[0]) for r in rows}
+                if found != set(subject_ids): raise HTTPException(404, 'One or more selected subjects were not found')
+                invalid = [sid(r[0]) for r in rows if sid(r[1]) != department_id]
+                if invalid: raise HTTPException(400, 'Selected subjects must belong to the teacher department')
             await cur.execute('DELETE FROM teacher_subjects WHERE tenant_id=%s AND teacher_id=%s', (sid(tenant_id), sid(teacher_id)))
             for subject_id in subject_ids:
                 await cur.execute('INSERT INTO teacher_subjects (id,tenant_id,teacher_id,subject_id) VALUES (%s,%s,%s,%s)', (sid(uuid4()), sid(tenant_id), sid(teacher_id), subject_id))
