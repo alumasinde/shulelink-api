@@ -34,6 +34,7 @@ const router = createRouter({
     { path: "/school/guardians", name: "guardians", component: GuardiansView, meta: { auth: true, tenant: true } },
     { path: "/school/portal-accounts", name: "portal-accounts", component: PortalAccountsView, meta: { auth: true, tenant: true, permission: "accounts.manage" } },
     { path: "/school/academics", name: "academics", component: AcademicsView, meta: { auth: true, tenant: true, permission: "academics.read" } },
+    { path: "/school/academics/teacher-subjects", redirect: "/school/academics" },
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
   scrollBehavior() { return { top: 0 }; },
