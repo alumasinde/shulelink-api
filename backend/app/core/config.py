@@ -11,16 +11,16 @@ Environment = Literal["development", "test", "staging", "production"]
 class Settings(BaseSettings):
     """Single source of truth for runtime configuration.
 
-    Deployment-sensitive values are intentionally required. Missing values or
+    Deployment configuration is intentionally explicit. Missing values or
     unknown environment variables fail startup instead of silently falling
-    back to development defaults or being ignored.
+    back to development settings.
     """
 
-    app_name: str = "ShuleLink"
+    app_name: str
     app_env: Environment
     debug: bool
-    app_version: str = "0.2.0"
-    api_v1_prefix: str = "/api/v1"
+    app_version: str
+    api_v1_prefix: str
 
     db_host: str
     db_port: int = Field(ge=1, le=65535)
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     db_user: str
     db_password: str
     db_ssl_ca: str | None = None
-    db_ssl_verify: bool = True
+    db_ssl_verify: bool
     db_pool_min_size: int = Field(ge=1)
     db_pool_max_size: int = Field(ge=1)
     db_pool_recycle_seconds: int = Field(ge=60)
@@ -124,11 +124,6 @@ class Settings(BaseSettings):
         if env == "production":
             if not self.db_provisioner_host or not self.db_provisioner_user or not self.db_provisioner_password:
                 raise ValueError("Dedicated tenant provisioning credentials are required in production")
-
-        if env == "development" and self.auth_cookie_mode and not self.auth_cookie_secure:
-            # Explicitly allowed for local HTTP development. This is not a
-            # default: the operator must opt into cookie mode in .env.
-            pass
 
         return self
 
