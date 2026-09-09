@@ -3,116 +3,27 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "./stores/auth";
 
-const auth = useAuthStore();
-const route = useRoute();
-const router = useRouter();
-const sidebarOpen = ref(false);
-const isPlatformHost = computed(() => ["admin.localhost", "admin.shulelink.co.ke", "localhost", "127.0.0.1"].includes(window.location.hostname));
+const auth = useAuthStore(); const route = useRoute(); const router = useRouter(); const sidebarOpen = ref(false);
+const isPlatformHost = computed(() => ["admin.localhost","admin.shulelink.co.ke","localhost","127.0.0.1"].includes(window.location.hostname));
 const tenantLabel = computed(() => auth.user?.tenant_name || window.location.hostname.split(".")[0] || "School");
-const isAuthenticatedPage = computed(() => auth.isAuthenticated && !["login", "home"].includes(route.name));
+const isAuthenticatedPage = computed(() => auth.isAuthenticated && !["login","home"].includes(route.name));
 const can = (permission) => auth.user?.permissions?.includes(permission);
 const tenantNavigation = computed(() => [
-  { label: "Dashboard", icon: "bi-grid-1x2", to: "/school" },
-  { label: "School Structure", icon: "bi-diagram-3", to: "/school/structure", permission: "school.structure.read" },
-  { label: "Import & Export", icon: "bi-arrow-left-right", to: "/school/data-transfer", permission: "school.structure.manage" },
-  { label: "Students", icon: "bi-people", to: "/school/students", permission: "students.read" },
-  { label: "Guardians", icon: "bi-person-hearts", to: "/school/guardians", permission: "students.read" },
-  { label: "Portal Accounts", icon: "bi-person-badge", to: "/school/portal-accounts", permission: "accounts.manage" },
-  { label: "Academics", icon: "bi-mortarboard", comingSoon: true },
-  { label: "Attendance", icon: "bi-calendar-check", comingSoon: true },
-  { label: "Examinations", icon: "bi-journal-check", comingSoon: true },
-  { label: "Fees & Payments", icon: "bi-wallet2", comingSoon: true },
-  { label: "Communication", icon: "bi-chat-square-text", comingSoon: true },
-  { label: "Reports", icon: "bi-bar-chart", comingSoon: true },
-].filter((item) => !item.permission || can(item.permission)));
-const platformNavigation = [
-  { label: "Dashboard", icon: "bi-grid-1x2", to: "/platform" },
-  { label: "Schools", icon: "bi-buildings", to: "/platform/tenants" },
-  { label: "Users", icon: "bi-people", comingSoon: true },
-  { label: "Billing", icon: "bi-credit-card", comingSoon: true },
-  { label: "Reports", icon: "bi-bar-chart", comingSoon: true },
-];
+  { label:"Dashboard",icon:"bi-grid-1x2",to:"/school" },
+  { label:"School Structure",icon:"bi-diagram-3",to:"/school/structure",permission:"school.structure.read" },
+  { label:"Import & Export",icon:"bi-arrow-left-right",to:"/school/data-transfer",permission:"school.structure.manage" },
+  { label:"Students",icon:"bi-people",to:"/school/students",permission:"students.read" },
+  { label:"Guardians",icon:"bi-person-hearts",to:"/school/guardians",permission:"students.read" },
+  { label:"Portal Accounts",icon:"bi-person-badge",to:"/school/portal-accounts",permission:"accounts.manage" },
+  { label:"Academics",icon:"bi-mortarboard",to:"/school/academics",permission:"academics.read" },
+  { label:"Attendance",icon:"bi-calendar-check",comingSoon:true }, { label:"Examinations",icon:"bi-journal-check",comingSoon:true },
+  { label:"Fees & Payments",icon:"bi-wallet2",comingSoon:true }, { label:"Communication",icon:"bi-chat-square-text",comingSoon:true }, { label:"Reports",icon:"bi-bar-chart",comingSoon:true },
+].filter(item => !item.permission || can(item.permission)));
+const platformNavigation = [ {label:"Dashboard",icon:"bi-grid-1x2",to:"/platform"},{label:"Schools",icon:"bi-buildings",to:"/platform/tenants"},{label:"Users",icon:"bi-people",comingSoon:true},{label:"Billing",icon:"bi-credit-card",comingSoon:true},{label:"Reports",icon:"bi-bar-chart",comingSoon:true} ];
 const navigation = computed(() => auth.isPlatform ? platformNavigation : tenantNavigation.value);
-
-function isActive(item) {
-  return item.to && (route.path === item.to || route.path.startsWith(`${item.to}/`));
-}
-
-function closeSidebar() {
-  sidebarOpen.value = false;
-}
-
-function handleResize() {
-  if (window.innerWidth >= 992) sidebarOpen.value = false;
-}
-
-function handleLogout() {
-  auth.clear();
-}
-
-onMounted(() => {
-  window.addEventListener("shulelink:logout", handleLogout);
-  window.addEventListener("resize", handleResize);
-});
-
-onUnmounted(() => {
-  window.removeEventListener("shulelink:logout", handleLogout);
-  window.removeEventListener("resize", handleResize);
-});
-
-async function logout() {
-  closeSidebar();
-  await auth.logout();
-  router.push("/login");
-}
+function isActive(item){return item.to && (route.path===item.to || route.path.startsWith(`${item.to}/`))}
+function closeSidebar(){sidebarOpen.value=false} function handleResize(){if(window.innerWidth>=992)sidebarOpen.value=false} function handleLogout(){auth.clear()}
+onMounted(()=>{window.addEventListener("shulelink:logout",handleLogout);window.addEventListener("resize",handleResize)}); onUnmounted(()=>{window.removeEventListener("shulelink:logout",handleLogout);window.removeEventListener("resize",handleResize)})
+async function logout(){closeSidebar();await auth.logout();router.push("/login")}
 </script>
-
-<template>
-  <div class="app-shell">
-    <template v-if="isAuthenticatedPage">
-      <header class="app-header">
-        <div class="header-left">
-          <button class="sidebar-toggle d-lg-none" type="button" aria-label="Open navigation" @click="sidebarOpen = true"><i class="bi bi-list"></i></button>
-          <router-link class="app-brand" :to="auth.isPlatform ? '/platform' : '/school'"><span class="brand-mark">S</span><span>ShuleLink</span></router-link>
-        </div>
-        <div class="header-actions">
-          <button class="header-icon-btn" type="button" title="Notifications"><i class="bi bi-bell"></i><span class="notification-dot"></span></button>
-          <div class="user-menu">
-            <div class="avatar">{{ auth.user?.first_name?.charAt(0) }}{{ auth.user?.last_name?.charAt(0) }}</div>
-            <div class="user-details d-none d-md-block">
-              <div class="user-name">{{ auth.user?.first_name }} {{ auth.user?.last_name }}</div>
-              <div class="user-context">{{ isPlatformHost ? "Platform Administration" : tenantLabel }}</div>
-            </div>
-          </div>
-          <button class="logout-btn" type="button" title="Logout" @click="logout"><i class="bi bi-box-arrow-right"></i><span class="d-none d-sm-inline">Logout</span></button>
-        </div>
-      </header>
-
-      <div class="app-body">
-        <aside class="app-sidebar" :class="{ 'is-open': sidebarOpen }">
-          <div class="sidebar-school" v-if="!auth.isPlatform">
-            <div class="sidebar-school-icon"><i class="bi bi-building"></i></div>
-            <div class="sidebar-school-info"><span>School Portal</span><strong>{{ tenantLabel }}</strong></div>
-          </div>
-          <div class="sidebar-section-label">{{ auth.isPlatform ? "PLATFORM" : "WORKSPACE" }}</div>
-          <nav class="sidebar-nav">
-            <template v-for="item in navigation" :key="item.label">
-              <router-link v-if="item.to" :to="item.to" class="sidebar-link" :class="{ active: isActive(item) }" @click="closeSidebar">
-                <i class="bi" :class="item.icon"></i><span>{{ item.label }}</span>
-              </router-link>
-              <div v-else class="sidebar-link disabled"><i class="bi" :class="item.icon"></i><span>{{ item.label }}</span><span class="coming-soon">Soon</span></div>
-            </template>
-          </nav>
-          <div class="sidebar-bottom">
-            <div class="sidebar-section-label">SYSTEM</div>
-            <div class="sidebar-link disabled"><i class="bi bi-gear"></i><span>Settings</span><span class="coming-soon">Soon</span></div>
-            <button class="sidebar-logout" type="button" @click="logout"><i class="bi bi-box-arrow-right"></i><span>Sign out</span></button>
-          </div>
-        </aside>
-        <div v-if="sidebarOpen" class="sidebar-backdrop d-lg-none" @click="closeSidebar"></div>
-        <main class="app-content"><router-view /></main>
-      </div>
-    </template>
-    <main v-else><router-view /></main>
-  </div>
-</template>
+<template><div class="app-shell"><template v-if="isAuthenticatedPage"><header class="app-header"><div class="header-left"><button class="sidebar-toggle d-lg-none" type="button" aria-label="Open navigation" @click="sidebarOpen=true"><i class="bi bi-list"></i></button><router-link class="app-brand" :to="auth.isPlatform?'/platform':'/school'"><span class="brand-mark">S</span><span>ShuleLink</span></router-link></div><div class="header-actions"><button class="header-icon-btn" type="button" title="Notifications"><i class="bi bi-bell"></i><span class="notification-dot"></span></button><div class="user-menu"><div class="avatar">{{auth.user?.first_name?.charAt(0)}}{{auth.user?.last_name?.charAt(0)}}</div><div class="user-details d-none d-md-block"><div class="user-name">{{auth.user?.first_name}} {{auth.user?.last_name}}</div><div class="user-context">{{isPlatformHost?"Platform Administration":tenantLabel}}</div></div></div><button class="logout-btn" type="button" title="Logout" @click="logout"><i class="bi bi-box-arrow-right"></i><span class="d-none d-sm-inline">Logout</span></button></div></header><div class="app-body"><aside class="app-sidebar" :class="{'is-open':sidebarOpen}"><div class="sidebar-school" v-if="!auth.isPlatform"><div class="sidebar-school-icon"><i class="bi bi-building"></i></div><div class="sidebar-school-info"><span>School Portal</span><strong>{{tenantLabel}}</strong></div></div><div class="sidebar-section-label">{{auth.isPlatform?"PLATFORM":"WORKSPACE"}}</div><nav class="sidebar-nav"><template v-for="item in navigation" :key="item.label"><router-link v-if="item.to" :to="item.to" class="sidebar-link" :class="{active:isActive(item)}" @click="closeSidebar"><i class="bi" :class="item.icon"></i><span>{{item.label}}</span></router-link><div v-else class="sidebar-link disabled"><i class="bi" :class="item.icon"></i><span>{{item.label}}</span><span class="coming-soon">Soon</span></div></template></nav><div class="sidebar-bottom"><div class="sidebar-section-label">SYSTEM</div><div class="sidebar-link disabled"><i class="bi bi-gear"></i><span>Settings</span><span class="coming-soon">Soon</span></div><button class="sidebar-logout" type="button" @click="logout"><i class="bi bi-box-arrow-right"></i><span>Sign out</span></button></div></aside><div v-if="sidebarOpen" class="sidebar-backdrop d-lg-none" @click="closeSidebar"></div><main class="app-content"><router-view /></main></div></template><main v-else><router-view /></main></div></template>
