@@ -100,7 +100,7 @@ async function importWorkbook(event) {
   try {
     const result = await dataTransfer.importTeachers(file, 'upsert')
     if (result.valid) { success.value = `Import completed. Created: ${result.created}; Updated: ${result.updated}; Subject assignments: ${result.subject_assignments}.`; emit('refresh') }
-    else { error.value = `${result.error_count} validation error(s) found. See Import & Export for the full error report.` }
+    else { error.value = `${result.error_count} validation error(s) found. Use Import & Export for the full error report.` }
   } catch (e) { error.value = getApiError(e) }
   finally { busy.value = false }
 }
@@ -135,18 +135,17 @@ watch(() => props.teachers.map(t => t.id).join(','), () => {
     </div>
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0">
-        <thead><tr><th style="width:42px"><input class="form-check-input" type="checkbox" :checked="allVisibleSelected" @change="toggleAll"></th><th>No.</th><th>Name</th><th>Department</th><th>Subjects</th><th>Contact</th><th>Status</th></tr></thead>
+        <thead><tr><th style="width:42px"><input class="form-check-input" type="checkbox" :checked="allVisibleSelected" @change="toggleAll"></th><th>No.</th><th>Name</th><th>Department</th><th>Contact</th><th>Status</th></tr></thead>
         <tbody>
           <tr v-for="t in filteredTeachers" :key="t.id" :class="{ 'table-primary': selected.has(String(t.id)) }">
             <td><input class="form-check-input" type="checkbox" :checked="selected.has(String(t.id))" @change="toggle(t.id)"></td>
             <td>{{ t.teacher_number }}</td>
             <td><strong>{{ t.first_name }} {{ t.middle_name || '' }} {{ t.last_name }}</strong></td>
             <td>{{ t.department_name || '—' }}</td>
-            <td><span v-if="t.subjects?.length" class="small">{{ t.subjects.map(s => s.name).join(', ') }}</span><span v-else class="text-muted small">Not configured</span></td>
             <td>{{ t.phone || t.email || '—' }}</td>
             <td><span class="badge" :class="t.status === 'active' ? 'bg-success' : 'bg-secondary'">{{ t.status }}</span></td>
           </tr>
-          <tr v-if="!filteredTeachers.length"><td colspan="7" class="text-center text-muted py-4">No teachers match the current filter.</td></tr>
+          <tr v-if="!filteredTeachers.length"><td colspan="6" class="text-center text-muted py-4">No teachers match the current filter.</td></tr>
         </tbody>
       </table>
     </div>
