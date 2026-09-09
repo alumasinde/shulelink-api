@@ -9,7 +9,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
-from app.core.database import reset_request_pool
 from app.core.logging import logger, request_id_context
 
 
@@ -41,9 +40,12 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             raise
         finally:
             logger.info("request completed", extra={"event": "http_request", "method": request.method, "path": request.url.path, "status_code": status_code, "duration_ms": round((time.perf_counter() - started) * 1000, 2), "client_ip": request.client.host if request.client else None, "user_id": getattr(request.state, "user_id", None), "user_type": getattr(request.state, "user_type", None), "tenant_id": getattr(request.state, "tenant_id", None)})
-            pool_token = getattr(request.state, "tenant_pool_token", None)
-            if pool_token is not None:
-                reset_request_pool(pool_token)
+            # Tenant pool ContextVar tokens are created inside FastAPI's request
+            # task by tenant dependencies. Starlette BaseHTTPMiddleware runs
+            # call_next in a child task, so resetting that token here would cross
+            # task contexts and raise ValueError("Token ... was created in a different Context").
+            # Tenant dependencies own their tokens and reset them in their yield
+            # cleanup, which runs in the same context that created the token.
             request_id_context.reset(token)
             if response is not None:
                 response.headers["X-Request-ID"] = request_id
