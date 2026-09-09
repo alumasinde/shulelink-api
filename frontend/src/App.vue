@@ -16,6 +16,7 @@ const tenantNavigation = computed(() => [
   { label:"Guardians",icon:"bi-person-hearts",to:"/school/guardians",permission:"students.read" },
   { label:"Portal Accounts",icon:"bi-person-badge",to:"/school/portal-accounts",permission:"accounts.manage" },
   { label:"Academics",icon:"bi-mortarboard",to:"/school/academics",permission:"academics.read" },
+  { label:"Teacher Subjects",icon:"bi-bookmark-star",to:"/school/academics/teacher-subjects",permission:"teachers.manage" },
   { label:"Attendance",icon:"bi-calendar-check",comingSoon:true }, { label:"Examinations",icon:"bi-journal-check",comingSoon:true },
   { label:"Fees & Payments",icon:"bi-wallet2",comingSoon:true }, { label:"Communication",icon:"bi-chat-square-text",comingSoon:true }, { label:"Reports",icon:"bi-bar-chart",comingSoon:true },
 ].filter(item => !item.permission || can(item.permission)));
