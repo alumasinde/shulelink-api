@@ -67,10 +67,13 @@ async def issue_session(conn, user_type: str, user_id: UUID, tenant_id: UUID | N
     session_id = uuid4()
     refresh_raw, refresh_hash, refresh_expires = create_refresh_token()
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    await conn.cursor().execute(
-        "INSERT INTO auth_sessions (id,user_type,user_id,tenant_id,refresh_token_hash,expires_at,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-        (str(session_id),user_type,str(user_id),str(tenant_id) if tenant_id else None,refresh_hash,refresh_expires.replace(tzinfo=None),now),
-    )
+    # aiomysql's conn.cursor() is an async context manager, not a cursor object.
+    # Always enter it before calling execute/fetch methods.
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "INSERT INTO auth_sessions (id,user_type,user_id,tenant_id,refresh_token_hash,expires_at,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (str(session_id),user_type,str(user_id),str(tenant_id) if tenant_id else None,refresh_hash,refresh_expires.replace(tzinfo=None),now),
+        )
     access, access_expires = create_access_token(user_id=str(user_id),user_type=user_type,tenant_id=str(tenant_id) if tenant_id else None,session_id=str(session_id))
     return access, refresh_raw, access_expires, session_id
 
