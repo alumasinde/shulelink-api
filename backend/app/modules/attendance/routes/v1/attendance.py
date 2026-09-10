@@ -1,12 +1,13 @@
 from datetime import date
 from uuid import UUID
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from app.core.dependencies import get_current_principal, require_tenant_permission
 from app.core.database import get_pool
 from app.modules.attendance.engine import close, create_session, get_session, mark, roster
 from app.modules.attendance.schemas import AttendanceMarkRequest, AttendanceMarkResult, AttendanceSessionCloseResponse, AttendanceSessionCreate, AttendanceSessionResponse, AttendanceStatusResponse, RosterStudent
 from app.modules.attendance.services.capture_rules import apply_approved_exemptions
 from app.modules.attendance.services.nemis import stage_daily_attendance
+from app.modules.attendance.services.operations import has_permission, session_completion
 from app.modules.attendance.services.sync import receive_batch
 router = APIRouter(prefix='/attendance', tags=['Attendance'])
 def perm(code):
@@ -32,7 +33,12 @@ async def record(session_id: UUID, payload: AttendanceMarkRequest, principal=Dep
     payload=await apply_approved_exemptions(tenant_id,session_id,payload)
     return await mark(tenant_id,principal.user_id,session_id,payload,x_idempotency_key)
 @router.post('/sessions/{session_id}/close', response_model=AttendanceSessionCloseResponse)
-async def close_session(session_id: UUID, principal=Depends(get_current_principal), tenant_id: UUID = Depends(manage)): return await close(tenant_id,principal.user_id,session_id)
+async def close_session(session_id: UUID, principal=Depends(get_current_principal), tenant_id: UUID = Depends(manage)):
+    completion=await session_completion(tenant_id,session_id)
+    if completion['requires_override'] and not await has_permission(tenant_id,principal.user_id,'attendance.close.override'):
+        raise HTTPException(status_code=409, detail={'message':'Attendance session has unmarked students','not_marked_count':completion['not_marked_count'],'requires_override':True})
+    result=await close(tenant_id,principal.user_id,session_id)
+    return {**result, 'roster_count':completion['roster_count'], 'marked_count':completion['marked_count'], 'not_marked_count':completion['not_marked_count']}
 @router.post('/sync/batches')
 async def sync_batch(payload: dict, principal=Depends(get_current_principal), tenant_id: UUID = Depends(sync_perm)):
     return await receive_batch(tenant_id,str(payload.get('client_batch_id','')),payload.get('items') or [],UUID(str(payload['device_id'])) if payload.get('device_id') else None)
