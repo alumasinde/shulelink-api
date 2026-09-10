@@ -1,5 +1,6 @@
 from pathlib import Path
 import asyncio
+import hashlib
 import ssl
 from contextvars import ContextVar
 
@@ -36,9 +37,6 @@ def _connection_kwargs(*, multi_statements: bool = False) -> dict:
         use_unicode=True,
     )
     if multi_statements:
-        # Migration files intentionally contain multiple SQL statements. Keep
-        # MULTI_STATEMENTS limited to the one-shot migration connection rather
-        # than enabling it on the application's normal connection pool.
         kwargs["client_flag"] = CLIENT.MULTI_STATEMENTS
     ssl_context = _ssl_context()
     if ssl_context is not None:
@@ -112,13 +110,50 @@ async def ping_database() -> bool:
         return False
 
 
+async def _ensure_migration_metadata(cursor) -> None:
+    await cursor.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations ("
+        "version BIGINT UNSIGNED NOT NULL, "
+        "filename VARCHAR(255) NOT NULL, "
+        "checksum CHAR(64) NULL, "
+        "applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+        "PRIMARY KEY (filename), "
+        "KEY ix_schema_migrations_version (version)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+    )
+    await cursor.nextset()
+
+    await cursor.execute(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA=%s AND TABLE_NAME='schema_migrations'",
+        (settings.db_name,),
+    )
+    columns = {row[0] for row in await cursor.fetchall()}
+    if "checksum" not in columns:
+        await cursor.execute(
+            "ALTER TABLE schema_migrations ADD COLUMN checksum CHAR(64) NULL AFTER filename"
+        )
+        await cursor.nextset()
+
+    await cursor.execute(
+        "SELECT COLUMN_NAME FROM information_schema.STATISTICS "
+        "WHERE TABLE_SCHEMA=%s AND TABLE_NAME='schema_migrations' "
+        "AND INDEX_NAME='PRIMARY' ORDER BY SEQ_IN_INDEX",
+        (settings.db_name,),
+    )
+    primary_columns = [row[0] for row in await cursor.fetchall()]
+    if primary_columns == ["version"]:
+        await cursor.execute(
+            "ALTER TABLE schema_migrations DROP PRIMARY KEY, "
+            "ADD PRIMARY KEY (filename), "
+            "ADD KEY ix_schema_migrations_version (version)"
+        )
+        await cursor.nextset()
+
+
 async def run_migrations() -> None:
     migrations_dir = Path(__file__).resolve().parents[2] / "database" / "migrations"
-    files = sorted(migrations_dir.glob("*.sql"))
-
-    # Do not use the application's pool here. Migration files are full SQL
-    # scripts containing multiple statements, so the migration connection is
-    # explicitly created with CLIENT.MULTI_STATEMENTS and closed after use.
+    files = sorted(migrations_dir.glob("*.sql"), key=lambda path: (int(path.name.split("_", 1)[0]), path.name))
     connection = await aiomysql.connect(**_connection_kwargs(multi_statements=True))
     try:
         lock_acquired = False
@@ -129,52 +164,43 @@ async def run_migrations() -> None:
                 if not lock_acquired:
                     raise RuntimeError("Timed out waiting for the database migration lock")
 
-                await cursor.execute(
-                    "CREATE TABLE IF NOT EXISTS schema_migrations ("
-                    "version BIGINT UNSIGNED NOT NULL PRIMARY KEY, "
-                    "filename VARCHAR(255) NOT NULL, "
-                    "applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, "
-                    "UNIQUE KEY uq_schema_migrations_filename (filename)"
-                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
-                )
-                await cursor.nextset()
-
-                await cursor.execute("SELECT version FROM schema_migrations")
-                applied = {row[0] for row in await cursor.fetchall()}
-                seen_versions: set[int] = set()
+                await _ensure_migration_metadata(cursor)
+                await cursor.execute("SELECT filename,checksum FROM schema_migrations")
+                applied = {row[0]: row[1] for row in await cursor.fetchall()}
 
                 for path in files:
-                    version = int(path.name.split("_", 1)[0])
-                    # An applied migration is immutable history. Skip it before
-                    # duplicate-version validation.
-                    if version in applied:
-                        continue
-                    if version in seen_versions:
-                        raise RuntimeError(
-                            f"Duplicate unapplied migration version detected: {version}"
-                        )
-                    seen_versions.add(version)
-
+                    filename = path.name
                     sql = path.read_text(encoding="utf-8").strip()
                     if not sql:
                         continue
+                    version = int(filename.split("_", 1)[0])
+                    checksum = hashlib.sha256(sql.encode("utf-8")).hexdigest()
+
+                    if filename in applied:
+                        recorded_checksum = applied[filename]
+                        if recorded_checksum and recorded_checksum != checksum:
+                            raise RuntimeError(
+                                f"Applied migration was modified: {filename}"
+                            )
+                        if not recorded_checksum:
+                            await cursor.execute(
+                                "UPDATE schema_migrations SET checksum=%s WHERE filename=%s",
+                                (checksum, filename),
+                            )
+                        continue
 
                     await cursor.execute(sql)
-                    # PyMySQL/aiomysql requires all result sets from a
-                    # multi-statement query to be consumed before the next query.
                     while await cursor.nextset():
                         pass
 
                     await cursor.execute(
-                        "INSERT INTO schema_migrations (version, filename) VALUES (%s, %s)",
-                        (version, path.name),
+                        "INSERT INTO schema_migrations (version,filename,checksum) VALUES (%s,%s,%s)",
+                        (version, filename, checksum),
                     )
-                    applied.add(version)
+                    applied[filename] = checksum
             finally:
                 if lock_acquired:
-                    await cursor.execute(
-                        "SELECT RELEASE_LOCK('shulelink:schema-migrations')"
-                    )
+                    await cursor.execute("SELECT RELEASE_LOCK('shulelink:schema-migrations')")
     finally:
         connection.close()
         await connection.ensure_closed()
