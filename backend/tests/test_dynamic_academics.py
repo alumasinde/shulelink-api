@@ -24,8 +24,8 @@ def test_teacher_status_and_gender_are_dynamic_strings():
 
 
 def test_subject_type_and_class_requirement_are_dynamic():
-    subject = SubjectCreate(code='ENV', name='Environmental Learning', subject_type='school_defined', department_id=None)
-    offering = ClassSubjectCreate(class_level_id=uuid4(), subject_id=subject.__class__.model_fields and uuid4(), requirement_type='school_option', weekly_periods=4)
+    subject = SubjectCreate(code='ENV', name='Environmental Learning', subject_type='school_defined')
+    offering = ClassSubjectCreate(class_level_id=uuid4(), subject_id=uuid4(), requirement_type='school_option', weekly_periods=4)
     assert subject.subject_type == 'school_defined'
     assert offering.requirement_type == 'school_option'
     assert offering.weekly_periods == 4
