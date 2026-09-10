@@ -86,9 +86,7 @@ class Settings(BaseSettings):
         if self.db_pool_max_size < self.db_pool_min_size:
             raise ValueError("DB_POOL_MAX_SIZE must be greater than or equal to DB_POOL_MIN_SIZE")
         if self.db_tenant_pool_max_size < self.db_tenant_pool_min_size:
-            raise ValueError(
-                "DB_TENANT_POOL_MAX_SIZE must be greater than or equal to DB_TENANT_POOL_MIN_SIZE"
-            )
+            raise ValueError("DB_TENANT_POOL_MAX_SIZE must be greater than or equal to DB_TENANT_POOL_MIN_SIZE")
         if self.auth_cookie_samesite.lower() not in {"lax", "strict", "none"}:
             raise ValueError("AUTH_COOKIE_SAMESITE must be lax, strict or none")
         if self.auth_cookie_samesite.lower() == "none" and not self.auth_cookie_secure:
@@ -100,8 +98,8 @@ class Settings(BaseSettings):
         if self.app_env in {"staging", "production"}:
             if self.debug:
                 raise ValueError("DEBUG must be false in staging and production")
-            if len(self.jwt_secret_key) < 32:
-                raise ValueError("JWT_SECRET_KEY must be at least 32 characters in staging and production")
+            if len(self.jwt_secret_key) < 32 or self.jwt_secret_key == "change-this-in-production":
+                raise ValueError("JWT_SECRET_KEY must be a unique secret of at least 32 characters in staging and production")
             if self.db_user.lower() in {"root", "admin"}:
                 raise ValueError("A dedicated least-privilege database user is required in staging and production")
             if self.rate_limit_storage_uri.startswith("memory://"):
@@ -112,6 +110,8 @@ class Settings(BaseSettings):
                 raise ValueError("CREDENTIAL_ENCRYPTION_KEY is required in staging and production")
             if not self.db_ssl_ca:
                 raise ValueError("DB_SSL_CA is required in staging and production")
+            if self.cors_origin_regex or "*" in self.cors_origin_list:
+                raise ValueError("Wildcard CORS origins/regex are not permitted in staging and production")
             if not all((self.smtp_host, self.smtp_username, self.smtp_password, self.smtp_from)):
                 raise ValueError("SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM are required in staging and production")
             if self.auth_reset_return_token:
@@ -139,9 +139,7 @@ class Settings(BaseSettings):
 
     @property
     def max_theoretical_db_connections(self) -> int:
-        return self.db_pool_max_size + (
-            self.db_max_dedicated_tenant_pools * self.db_tenant_pool_max_size
-        )
+        return self.db_pool_max_size + self.db_max_dedicated_tenant_pools * self.db_tenant_pool_max_size
 
 
 @lru_cache
