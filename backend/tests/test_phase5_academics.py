@@ -5,10 +5,11 @@ from pydantic import ValidationError
 from app.modules.academics.schemas import PeriodCreate, TimetableCreate, GenerateRequest, TeacherCreate
 
 
-def test_teacher_requires_names_and_valid_gender():
+def test_teacher_names_and_dynamic_gender():
     t=TeacherCreate(teacher_number='T-001',first_name='Jane',last_name='Doe')
     assert t.gender=='unspecified'
-    with pytest.raises(ValidationError): TeacherCreate(teacher_number='T-001',first_name='Jane',last_name='Doe',gender='invalid')
+    custom=TeacherCreate(teacher_number='T-002',first_name='Jane',last_name='Doe',gender='school_defined_gender')
+    assert custom.gender=='school_defined_gender'
 
 
 def test_period_rejects_reversed_times():
@@ -22,8 +23,9 @@ def test_timetable_day_is_bounded():
     with pytest.raises(ValidationError): TimetableCreate(**{**base,'day_of_week':8})
 
 
-def test_generator_has_safe_lesson_bounds():
+def test_generator_has_safe_lesson_bounds_and_platform_default_support():
     req=GenerateRequest(academic_year_id=uuid4(),academic_term_id=uuid4(),lessons_per_week=7)
     assert req.lessons_per_week==7
+    assert GenerateRequest(academic_year_id=uuid4(),academic_term_id=uuid4()).lessons_per_week is None
     with pytest.raises(ValidationError): GenerateRequest(academic_year_id=uuid4(),academic_term_id=uuid4(),lessons_per_week=0)
-    with pytest.raises(ValidationError): GenerateRequest(academic_year_id=uuid4(),academic_term_id=uuid4(),lessons_per_week=11)
+    with pytest.raises(ValidationError): GenerateRequest(academic_year_id=uuid4(),academic_term_id=uuid4(),lessons_per_week=41)
