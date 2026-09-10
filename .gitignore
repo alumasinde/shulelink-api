@@ -6,6 +6,8 @@ venv/
 .env.*
 !.env.example
 !.env.*.example
+docker/*.env
+!docker/mysql.env.example
 .pytest_cache/
 .coverage
 htmlcov/
