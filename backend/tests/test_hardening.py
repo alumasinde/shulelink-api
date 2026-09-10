@@ -61,6 +61,17 @@ def test_production_rejects_debug_and_root_database_user():
         )
 
 
+def test_production_rejects_wildcard_cors():
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env="production",
+            jwt_secret_key="a" * 64,
+            db_user="shulelink_app",
+            rate_limit_storage_uri="redis://127.0.0.1:6379/0",
+            cors_origins="*",
+        )
+
+
 def test_validation_details_never_echo_input_values():
     error = RequestValidationError(
         [
