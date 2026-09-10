@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
@@ -23,7 +24,6 @@ def naive(value):
 
 
 def evaluate_status(code: str, marked_at: datetime, scheduled_start_at: datetime | None, grace_minutes: int):
-    """Return the effective status and late minutes for a captured attendance mark."""
     if code not in CAPTURE_STATUSES:
         raise HTTPException(422, f"Attendance status '{code}' cannot be used for attendance capture")
     if code not in {"present", "late"} or scheduled_start_at is None:
@@ -32,6 +32,27 @@ def evaluate_status(code: str, marked_at: datetime, scheduled_start_at: datetime
     if code == "present" and minutes > grace_minutes:
         return "late", minutes
     return code, (minutes if code == "late" else None)
+
+
+def request_fingerprint(payload):
+    body = {
+        "source": payload.source,
+        "items": [
+            {
+                "student_id": sid(item.student_id),
+                "status_code": item.status_code,
+                "marked_at": naive(item.marked_at).isoformat() if item.marked_at else None,
+                "remarks": item.remarks,
+            }
+            for item in payload.items
+        ],
+    }
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def serialize_event_payload(request_hash, result):
+    return json.dumps({"request_hash": request_hash, "response": result}, default=str, separators=(",", ":"))
 
 
 async def exists(cur, table, tenant_id, item_id):
@@ -53,8 +74,18 @@ async def session_for_update(cur, tenant_id, session_id):
     return await cur.fetchone()
 
 
+async def policy_by_id(cur, tenant_id, policy_id):
+    if not policy_id:
+        return None
+    await cur.execute(
+        "SELECT id,grace_period_minutes FROM attendance_policies WHERE id=%s AND tenant_id=%s LIMIT 1",
+        (sid(policy_id), sid(tenant_id)),
+    )
+    return await cur.fetchone()
+
+
 async def resolve_policy(cur, tenant_id, session):
-    """Resolve the most specific active policy captured by the session."""
+    """Resolve the most specific active policy when a session is opened."""
     await cur.execute(
         "SELECT id,grace_period_minutes FROM attendance_policies "
         "WHERE tenant_id=%s AND enabled=1 "
@@ -94,7 +125,6 @@ async def validate_timetable_context(cur, tenant_id, payload):
     row = await cur.fetchone()
     if not row:
         raise HTTPException(404, "Timetable entry not found")
-
     if payload.get("academic_year_id") and sid(row[0]) != sid(payload["academic_year_id"]):
         raise HTTPException(400, "Timetable entry does not belong to the selected academic year")
     if payload.get("academic_term_id") and sid(row[1]) != sid(payload["academic_term_id"]):
@@ -103,22 +133,15 @@ async def validate_timetable_context(cur, tenant_id, payload):
         raise HTTPException(400, "Timetable entry does not match the selected class")
     if sid(row[3]) != sid(payload.get("stream_id")):
         raise HTTPException(400, "Timetable entry does not match the selected stream")
-
     session_date = payload["session_date"]
     if isinstance(session_date, str):
         session_date = date.fromisoformat(session_date)
     if row[4] != session_date.isoweekday():
         raise HTTPException(400, "Timetable entry is not scheduled for the selected session date")
-
     scheduled_start = payload.get("scheduled_start_at")
     scheduled_end = payload.get("scheduled_end_at")
-    if scheduled_start is not None and scheduled_end is not None:
-        if scheduled_end <= scheduled_start:
-            raise HTTPException(422, "scheduled_end_at must be after scheduled_start_at")
-
-
-def serialize_result(result):
-    return json.dumps(result, default=str, separators=(",", ":"))
+    if scheduled_start is not None and scheduled_end is not None and scheduled_end <= scheduled_start:
+        raise HTTPException(422, "scheduled_end_at must be after scheduled_start_at")
 
 
 async def create_session(tenant_id, user_id, payload):
@@ -135,7 +158,6 @@ async def create_session(tenant_id, user_id, payload):
                 ]:
                     if payload.get(key) and not await exists(cur, table, tenant_id, payload[key]):
                         raise HTTPException(404, f"{label} not found")
-
                 if payload.get("stream_id"):
                     await cur.execute(
                         "SELECT class_level_id FROM streams WHERE id=%s AND tenant_id=%s",
@@ -146,7 +168,6 @@ async def create_session(tenant_id, user_id, payload):
                         raise HTTPException(404, "Stream not found")
                     if sid(row[0]) != sid(payload["class_level_id"]):
                         raise HTTPException(400, "Stream does not belong to the selected class level")
-
                 if payload.get("academic_term_id") and payload.get("academic_year_id"):
                     await cur.execute(
                         "SELECT academic_year_id FROM academic_terms WHERE id=%s AND tenant_id=%s",
@@ -155,25 +176,18 @@ async def create_session(tenant_id, user_id, payload):
                     row = await cur.fetchone()
                     if not row or sid(row[0]) != sid(payload["academic_year_id"]):
                         raise HTTPException(400, "Academic term does not belong to the selected academic year")
-
                 await validate_timetable_context(cur, tenant_id, payload)
-
                 policy = await resolve_policy(
                     cur,
                     tenant_id,
                     [
                         None,
-                        payload.get("academic_year_id"),
-                        payload.get("academic_term_id"),
-                        payload["class_level_id"],
-                        payload.get("stream_id"),
-                        payload.get("timetable_entry_id"),
-                        payload["session_type"],
-                        payload["session_date"],
+                        payload.get("academic_year_id"), payload.get("academic_term_id"),
+                        payload["class_level_id"], payload.get("stream_id"),
+                        payload.get("timetable_entry_id"), payload["session_type"], payload["session_date"],
                     ],
                 )
                 policy_id = policy[0] if policy else None
-
                 await cur.execute(
                     "SELECT id FROM attendance_sessions WHERE tenant_id=%s AND session_date=%s "
                     "AND session_type=%s AND (class_level_id <=> %s) AND (stream_id <=> %s) "
@@ -186,8 +200,7 @@ async def create_session(tenant_id, user_id, payload):
                 )
                 if await cur.fetchone():
                     raise HTTPException(409, "An attendance session already exists for this class, date and lesson")
-
-                actual_started_at = naive(payload.get("actual_started_at")) if payload.get("actual_started_at") else utcnow()
+                actual_started_at = utcnow()
                 await cur.execute(
                     "INSERT INTO attendance_sessions "
                     "(id,tenant_id,academic_year_id,academic_term_id,class_level_id,stream_id,timetable_entry_id,"
@@ -235,7 +248,6 @@ async def get_session(tenant_id, session_id):
                 (sid(tenant_id), sid(session_id)),
             )
             marked_count = (await cur.fetchone())[0]
-
     keys = [
         "id", "academic_year_id", "academic_term_id", "class_level_id", "stream_id",
         "timetable_entry_id", "session_type", "session_date", "scheduled_start_at",
@@ -262,8 +274,7 @@ async def roster(tenant_id, session_id):
                 "SELECT e.id,e.student_id,e.class_level_id,e.stream_id,st.admission_number,st.first_name,"
                 "st.middle_name,st.last_name,COALESCE(a.code,'not_marked'),COALESCE(a.name,'Not Marked'),"
                 "ar.late_minutes,ar.marked_at,ar.remarks "
-                "FROM student_enrollments e "
-                "JOIN students st ON st.id=e.student_id AND st.tenant_id=e.tenant_id "
+                "FROM student_enrollments e JOIN students st ON st.id=e.student_id AND st.tenant_id=e.tenant_id "
                 "LEFT JOIN attendance_records ar ON ar.session_id=%s AND ar.student_id=e.student_id AND ar.tenant_id=%s "
                 "LEFT JOIN attendance_statuses a ON a.id=ar.attendance_status_id AND a.tenant_id=ar.tenant_id "
                 "WHERE e.tenant_id=%s AND e.class_level_id=%s AND (e.stream_id <=> %s) "
@@ -287,7 +298,7 @@ async def mark(tenant_id, user_id, session_id, payload, idempotency_key):
     key = idempotency_key.strip() if idempotency_key else None
     if key and not 1 <= len(key) <= 191:
         raise HTTPException(422, "X-Idempotency-Key must contain 1-191 characters")
-
+    request_hash = request_fingerprint(payload) if key else None
     pool = get_pool()
     async with pool.acquire() as conn:
         await conn.begin()
@@ -296,23 +307,28 @@ async def mark(tenant_id, user_id, session_id, payload, idempotency_key):
                 session = await session_for_update(cur, tenant_id, session_id)
                 if not session:
                     raise HTTPException(404, "Attendance session not found")
-                if session[12] != "open":
-                    raise HTTPException(409, f"Attendance session is {session[12]} and cannot be modified")
 
                 if key:
                     await cur.execute(
-                        "SELECT payload_json FROM attendance_events "
+                        "SELECT session_id,payload_json FROM attendance_events "
                         "WHERE tenant_id=%s AND idempotency_key=%s LIMIT 1 FOR UPDATE",
                         (sid(tenant_id), key),
                     )
                     event = await cur.fetchone()
                     if event:
-                        if event[0]:
-                            return_payload = json.loads(event[0]) if isinstance(event[0], str) else event[0]
+                        if sid(event[0]) != sid(session_id):
+                            raise HTTPException(409, "X-Idempotency-Key has already been used for another attendance session")
+                        stored = json.loads(event[1]) if isinstance(event[1], str) else event[1]
+                        if isinstance(stored, dict) and stored.get("request_hash") and stored["request_hash"] != request_hash:
+                            raise HTTPException(409, "X-Idempotency-Key was already used with a different request")
+                        if isinstance(stored, dict) and stored.get("response"):
                             await conn.commit()
-                            return return_payload
+                            return stored["response"]
                         await conn.commit()
                         return {"session_id": session_id, "processed": 0, "created": 0, "updated": 0, "results": []}
+
+                if session[12] != "open":
+                    raise HTTPException(409, f"Attendance session is {session[12]} and cannot be modified")
 
                 student_ids = [sid(item.student_id) for item in payload.items]
                 placeholders = ",".join(["%s"] * len(student_ids))
@@ -320,31 +336,25 @@ async def mark(tenant_id, user_id, session_id, payload, idempotency_key):
                     f"SELECT student_id FROM student_enrollments WHERE tenant_id=%s AND class_level_id=%s "
                     f"AND (stream_id <=> %s) AND enrollment_date<=%s AND (exit_date IS NULL OR exit_date>=%s) "
                     f"AND status='active' AND student_id IN ({placeholders})",
-                    [
-                        sid(tenant_id), sid(session[3]), sid(session[4]), session[7], session[7],
-                        *student_ids,
-                    ],
+                    [sid(tenant_id), sid(session[3]), sid(session[4]), session[7], session[7], *student_ids],
                 )
                 valid_students = {sid(row[0]) for row in await cur.fetchall()}
                 if len(valid_students) != len(set(student_ids)):
                     raise HTTPException(422, "One or more students are not enrolled in this session's class/stream on the session date")
 
-                created = 0
+                policy = await policy_by_id(cur, tenant_id, session[13])
+                grace = int(policy[1]) if policy else 0
                 results = []
                 for item in payload.items:
                     await cur.execute(
-                        "SELECT id,attendance_status_id,ast.code FROM attendance_records ar "
-                        "JOIN attendance_statuses ast ON ast.id=ar.attendance_status_id AND ast.tenant_id=ar.tenant_id "
-                        "WHERE ar.tenant_id=%s AND ar.session_id=%s AND ar.student_id=%s FOR UPDATE",
+                        "SELECT id FROM attendance_records WHERE tenant_id=%s AND session_id=%s AND student_id=%s FOR UPDATE",
                         (sid(tenant_id), sid(session_id), sid(item.student_id)),
                     )
-                    existing = await cur.fetchone()
-                    if existing:
+                    if await cur.fetchone():
                         raise HTTPException(
                             409,
                             "Attendance is already recorded for one or more selected students; use the correction workflow to change an existing record",
                         )
-
                     await cur.execute(
                         "SELECT id,code FROM attendance_statuses WHERE tenant_id=%s AND code=%s AND is_active=1 LIMIT 1",
                         (sid(tenant_id), item.status_code),
@@ -352,49 +362,34 @@ async def mark(tenant_id, user_id, session_id, payload, idempotency_key):
                     status_row = await cur.fetchone()
                     if not status_row:
                         raise HTTPException(422, f"Attendance status '{item.status_code}' is not active")
-
                     marked_at = naive(item.marked_at or utcnow())
                     if marked_at > utcnow() + timedelta(minutes=5):
                         raise HTTPException(422, "marked_at cannot be materially in the future")
-
-                    policy = await resolve_policy(cur, tenant_id, session)
-                    grace = int(policy[1]) if policy else 0
-                    code, late_minutes = evaluate_status(
-                        status_row[1], marked_at, session[8], grace
-                    )
+                    code, late_minutes = evaluate_status(status_row[1], marked_at, session[8], grace)
                     if code != status_row[1]:
                         await cur.execute(
-                            "SELECT id FROM attendance_statuses WHERE tenant_id=%s AND code=%s AND is_active=1 LIMIT 1",
+                            "SELECT id,code FROM attendance_statuses WHERE tenant_id=%s AND code=%s AND is_active=1 LIMIT 1",
                             (sid(tenant_id), code),
                         )
                         status_row = await cur.fetchone()
                         if not status_row:
                             raise HTTPException(500, "Configured attendance status catalog is incomplete")
-
                     record_id = uuid4()
                     await cur.execute(
                         "INSERT INTO attendance_records "
-                        "(id,tenant_id,session_id,student_id,attendance_status_id,marked_at,marked_by_user_id,"
-                        "source,late_minutes,remarks,is_correction) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0)",
+                        "(id,tenant_id,session_id,student_id,attendance_status_id,marked_at,marked_by_user_id,source,late_minutes,remarks,is_correction) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0)",
                         (
                             sid(record_id), sid(tenant_id), sid(session_id), sid(item.student_id), sid(status_row[0]),
                             marked_at, sid(user_id), payload.source, late_minutes, item.remarks,
                         ),
                     )
-                    created += 1
-                    results.append(
-                        {
-                            "student_id": item.student_id,
-                            "status_code": code,
-                            "late_minutes": late_minutes,
-                            "record_id": record_id,
-                        }
-                    )
+                    results.append({"student_id": item.student_id, "status_code": code, "late_minutes": late_minutes, "record_id": record_id})
 
                 result = {
                     "session_id": session_id,
                     "processed": len(results),
-                    "created": created,
+                    "created": len(results),
                     "updated": 0,
                     "results": results,
                 }
@@ -404,7 +399,7 @@ async def mark(tenant_id, user_id, session_id, payload, idempotency_key):
                     "VALUES (%s,%s,%s,'captured',%s,%s,%s,%s,%s)",
                     (
                         sid(uuid4()), sid(tenant_id), sid(session_id), payload.source, utcnow(), sid(user_id),
-                        key, serialize_result(result),
+                        key, serialize_event_payload(request_hash, result),
                     ),
                 )
             await conn.commit()
