@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { teachers } from '../../api/academics'
+import { teachers, academicsConfiguration } from '../../api/academics'
 import { departments, subjects } from '../../api/schoolStructure'
 
 const loading=ref(false)
@@ -17,13 +17,14 @@ const policy=ref({ maxSubjects: null, departmentMatching: false })
 const selectedTeacher=computed(()=>teacherList.value.find(t=>String(t.id)===String(teacherId.value)))
 const departmentName=computed(()=>selectedTeacher.value?.department_name || departmentList.value.find(d=>String(d.id)===String(selectedTeacher.value?.department_id))?.name || '')
 const maxSubjects=computed(()=>policy.value.maxSubjects)
-const canSave=computed(()=>Boolean(teacherId.value && (selectedSubjects.value.length===0 || selectedSubjects.value.length<=Number.MAX_SAFE_INTEGER)))
+const canSave=computed(()=>Boolean(teacherId.value))
 
 async function load(){
   loading.value=true; error.value=''; success.value=''
   try {
-    const [t,d,s]=await Promise.all([teachers.list({status:'active'}),departments.list(),subjects.list()])
+    const [t,d,s,c]=await Promise.all([teachers.list({status:'active'}),departments.list(),subjects.list(),academicsConfiguration()])
     teacherList.value=t; departmentList.value=d; subjectList.value=s
+    policy.value={ maxSubjects: c.settings?.academic?.default_teacher_subject_limit ?? c.settings?.['academic.default_teacher_subject_limit'] ?? null, departmentMatching: Boolean(c.settings?.academic?.enforce_department_subject_matching ?? c.settings?.['academic.enforce_department_subject_matching']) }
   } catch(e){ error.value=e?.response?.data?.detail||'Failed to load teachers, departments and subjects' }
   finally{ loading.value=false }
 }
