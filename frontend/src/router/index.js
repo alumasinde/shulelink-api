@@ -5,6 +5,7 @@ import LoginView from "../views/auth/LoginView.vue";
 import ActivateAccountView from "../views/auth/ActivateAccountView.vue";
 import PlatformDashboard from "../views/platform/PlatformDashboard.vue";
 import TenantsView from "../views/platform/TenantsView.vue";
+import AcademicSettingsView from "../views/platform/AcademicSettingsView.vue";
 import RoleDashboardView from "../views/tenant/RoleDashboardView.vue";
 import RolePortalView from "../views/tenant/RolePortalView.vue";
 import SchoolStructureView from "../views/tenant/SchoolStructureView.vue";
@@ -26,6 +27,7 @@ const router = createRouter({
     { path: "/activate", name: "activate", component: ActivateAccountView, meta: { guestOnly: true } },
     { path: "/platform", name: "platform-dashboard", component: PlatformDashboard, meta: { auth: true, platform: true } },
     { path: "/platform/tenants", name: "platform-tenants", component: TenantsView, meta: { auth: true, platform: true } },
+    { path: "/platform/academic-settings", name: "platform-academic-settings", component: AcademicSettingsView, meta: { auth: true, platform: true } },
     { path: "/school", name: "tenant-dashboard", component: RoleDashboardView, meta: { auth: true, tenant: true } },
     { path: "/school/portal", name: "role-portal", component: RolePortalView, meta: { auth: true, tenant: true } },
     { path: "/school/structure", name: "school-structure", component: SchoolStructureView, meta: { auth: true, tenant: true } },
