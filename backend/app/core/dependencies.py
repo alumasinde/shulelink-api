@@ -64,7 +64,7 @@ def require_platform_permission(permission_code: str):
         pool = get_central_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT 1 FROM platform_user_roles ur JOIN platform_role_permissions rp ON rp.platform_role_id=ur.platform_role_id JOIN platform_permissions p ON p.id=rp.platform_permission_id WHERE ur.platform_user_id=%s AND p.code=%s LIMIT 1", (str(principal.user_id), permission_code))
+                await cur.execute("SELECT 1 FROM platform_user_roles ur JOIN platform_roles r ON r.id=ur.platform_role_id LEFT JOIN platform_role_permissions rp ON rp.platform_role_id=r.id LEFT JOIN platform_permissions p ON p.id=rp.platform_permission_id WHERE ur.platform_user_id=%s AND (r.is_super_admin=1 OR p.code=%s) LIMIT 1", (str(principal.user_id), permission_code))
                 if not await cur.fetchone(): raise HTTPException(status_code=403, detail="Insufficient platform permission")
         return principal
     return dependency
