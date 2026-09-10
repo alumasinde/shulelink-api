@@ -1,1 +1,1 @@
--- This file is intentionally removed from the working branch.
+-- Temporary file removed after branch discard preparation.
