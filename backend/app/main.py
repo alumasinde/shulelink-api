@@ -36,10 +36,14 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     configure_logging()
+    production = settings.app_env == "production"
     application = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         debug=settings.debug,
+        docs_url=None if production else "/docs",
+        redoc_url=None if production else "/redoc",
+        openapi_url=None if production else f"{settings.api_v1_prefix}/openapi.json",
         lifespan=lifespan,
     )
     application.state.limiter = limiter
