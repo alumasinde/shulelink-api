@@ -16,8 +16,12 @@ def now_utc():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-async def _student_exists(cur, tenant_id, student_id):
-    await cur.execute("SELECT 1 FROM students WHERE id=%s AND tenant_id=%s LIMIT 1", (sid(student_id), sid(tenant_id)))
+async def _student_exists(cur, tenant_id, student_id, lock=False):
+    suffix = " FOR UPDATE" if lock else ""
+    await cur.execute(
+        f"SELECT 1 FROM students WHERE id=%s AND tenant_id=%s LIMIT 1{suffix}",
+        (sid(student_id), sid(tenant_id)),
+    )
     if not await cur.fetchone():
         raise HTTPException(404, "Student not found")
 
@@ -34,7 +38,7 @@ async def create_exemption(tenant_id, user_id, student_id, exemption_type, start
         await conn.begin()
         try:
             async with conn.cursor() as cur:
-                await _student_exists(cur, tenant_id, student_id)
+                await _student_exists(cur, tenant_id, student_id, lock=True)
                 await cur.execute(
                     "SELECT id FROM attendance_exemptions WHERE tenant_id=%s AND student_id=%s "
                     "AND status IN ('pending','approved') AND starts_at < %s AND ends_at > %s LIMIT 1",
@@ -111,6 +115,12 @@ async def resolve_exemption(tenant_id, user_id, exemption_id, approve):
                     raise HTTPException(409, f"Attendance exemption is already {row[3]}")
                 if sid(row[6]) == sid(user_id):
                     raise HTTPException(403, "The requester cannot approve their own exemption")
+
+                # Serialize all exemption state transitions for the same student.
+                # This closes the race where two administrators approve overlapping
+                # exemptions at the same time.
+                await _student_exists(cur, tenant_id, row[1], lock=True)
+
                 resolved = now_utc()
                 if approve:
                     await cur.execute(
@@ -153,6 +163,7 @@ async def cancel_exemption(tenant_id, user_id, exemption_id):
                     raise HTTPException(404, "Attendance exemption not found")
                 if row[0] not in ("pending", "approved"):
                     raise HTTPException(409, f"Attendance exemption is already {row[0]}")
+                await _student_exists(cur, tenant_id, row[1], lock=True)
                 resolved = now_utc()
                 await cur.execute(
                     "UPDATE attendance_exemptions SET status='cancelled',resolved_at=%s WHERE id=%s AND tenant_id=%s",
@@ -165,11 +176,16 @@ async def cancel_exemption(tenant_id, user_id, exemption_id):
     return await get_exemption(tenant_id, exemption_id)
 
 
-async def find_active_exemption(cur, tenant_id, student_id, at):
+async def find_active_exemption(cur, tenant_id, student_id, starts_at, ends_at=None):
+    # An exemption only applies automatically when it covers the entire
+    # attendance session window. This prevents a partial-day leave from
+    # incorrectly excusing a whole lesson/session.
+    end = ends_at or starts_at
     await cur.execute(
         "SELECT id,exemption_type,status,starts_at,ends_at,reason FROM attendance_exemptions "
-        "WHERE tenant_id=%s AND student_id=%s AND status='approved' AND starts_at<=%s AND ends_at>%s "
+        "WHERE tenant_id=%s AND student_id=%s AND status='approved' "
+        "AND starts_at<=%s AND ends_at>=%s "
         "ORDER BY CASE exemption_type WHEN 'sickbay' THEN 1 WHEN 'leave' THEN 2 WHEN 'suspension' THEN 3 WHEN 'official_duty' THEN 4 ELSE 5 END, starts_at DESC LIMIT 1",
-        (sid(tenant_id), sid(student_id), at, at),
+        (sid(tenant_id), sid(student_id), starts_at, end),
     )
     return await cur.fetchone()
