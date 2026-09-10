@@ -63,7 +63,7 @@ async def class_subjects(tenant_id=Depends(read_tenant)): return await list_assi
 @router.post('/class-subjects',response_model=ClassSubjectResponse,status_code=201)
 async def add_class_subject(payload:ClassSubjectCreate,tenant_id=Depends(manage_tenant)): return await assign_subject(tenant_id,payload.model_dump())
 @router.patch('/class-subjects/{item_id}',response_model=ClassSubjectResponse)
-async def edit_class_subject(item_id:UUID,payload:ClassSubjectUpdate,tenant_id=Depends(manage_tenant)): return await update_class_subject(tenant_id,item_id,payload.is_compulsory)
+async def edit_class_subject(item_id:UUID,payload:ClassSubjectUpdate,tenant_id=Depends(manage_tenant)): return await update_class_subject(tenant_id,item_id,payload.is_compulsory,**payload.model_dump(exclude={'is_compulsory'},exclude_unset=True))
 @router.delete('/class-subjects/{item_id}',status_code=status.HTTP_204_NO_CONTENT)
 async def remove_class_subject(item_id:UUID,tenant_id=Depends(manage_tenant)): await delete_class_subject(tenant_id,item_id)
 
