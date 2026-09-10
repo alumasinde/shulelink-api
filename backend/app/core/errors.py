@@ -21,7 +21,22 @@ def _response(request: Request, status_code: int, code: str, message: str, detai
         headers=headers,
     )
     response.headers["X-Request-ID"] = _request_id(request)
+    response.headers["Cache-Control"] = "no-store"
     return response
+
+
+def _safe_validation_details(exc: RequestValidationError) -> list[dict]:
+    # Never return Pydantic's raw `input`/`ctx` values. Validation errors can
+    # otherwise echo passwords, tokens, uploaded values, or other sensitive data.
+    details: list[dict] = []
+    for error in exc.errors():
+        details.append(
+            {
+                "loc": list(error.get("loc", ())),
+                "type": error.get("type", "validation_error"),
+            }
+        )
+    return details
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -37,14 +52,36 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "client_ip": request.client.host if request.client else None,
             },
         )
-        return _response(request, 429, "RATE_LIMIT_EXCEEDED", "Too many requests. Please try again later.", headers={"Retry-After": "60"})
+        return _response(
+            request,
+            429,
+            "RATE_LIMIT_EXCEEDED",
+            "Too many requests. Please try again later.",
+            headers={"Retry-After": "60"},
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception(request: Request, exc: StarletteHTTPException):
         if exc.status_code >= 500:
-            logger.error("http server error", extra={"event": "http_error", "method": request.method, "path": request.url.path, "status_code": exc.status_code})
+            logger.error(
+                "http server error",
+                extra={
+                    "event": "http_error",
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": exc.status_code,
+                },
+            )
         elif exc.status_code in {401, 403, 404, 409, 422}:
-            logger.warning("http client/security error", extra={"event": "http_error", "method": request.method, "path": request.url.path, "status_code": exc.status_code})
+            logger.warning(
+                "http client/security error",
+                extra={
+                    "event": "http_error",
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": exc.status_code,
+                },
+            )
         message = str(exc.detail) if exc.status_code < 500 else "An unexpected error occurred"
         return _response(request, exc.status_code, "HTTP_ERROR", message)
 
@@ -52,14 +89,30 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def validation_exception(request: Request, exc: RequestValidationError):
         logger.warning(
             "request validation failed",
-            extra={"event": "validation_error", "method": request.method, "path": request.url.path, "status_code": 422},
+            extra={
+                "event": "validation_error",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 422,
+            },
         )
-        return _response(request, 422, "VALIDATION_ERROR", "Request validation failed", exc.errors())
+        return _response(
+            request,
+            422,
+            "VALIDATION_ERROR",
+            "Request validation failed",
+            _safe_validation_details(exc),
+        )
 
     @app.exception_handler(Exception)
     async def unhandled_exception(request: Request, exc: Exception):
         logger.exception(
             "unhandled application exception",
-            extra={"event": "unhandled_exception", "method": request.method, "path": request.url.path, "status_code": 500},
+            extra={
+                "event": "unhandled_exception",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 500,
+            },
         )
         return _response(request, 500, "INTERNAL_ERROR", "An unexpected error occurred")
