@@ -104,8 +104,8 @@ class Settings(BaseSettings):
                 raise ValueError("A dedicated least-privilege database user is required in staging and production")
             if self.rate_limit_storage_uri.startswith("memory://"):
                 raise ValueError("A shared rate-limit store such as Redis is required in staging and production")
-            if not self.auth_cookie_mode or not self.auth_cookie_secure:
-                raise ValueError("Staging and production require Secure HttpOnly cookie authentication")
+            if self.auth_cookie_mode and not self.auth_cookie_secure:
+                raise ValueError("Secure HttpOnly cookie authentication requires AUTH_COOKIE_SECURE=true")
             if not self.credential_encryption_key:
                 raise ValueError("CREDENTIAL_ENCRYPTION_KEY is required in staging and production")
             if not self.db_ssl_ca:
