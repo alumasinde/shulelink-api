@@ -1,4 +1,3 @@
-from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from app.core.dependencies import get_current_principal, require_tenant_permission
@@ -7,17 +6,10 @@ from app.modules.attendance.services.corrections import list_corrections, reques
 from app.modules.attendance.services.exemptions import cancel_exemption, create_exemption, get_exemption, list_exemptions, resolve_exemption
 
 router = APIRouter(prefix='/attendance', tags=['Attendance Corrections & Exemptions'])
-
 def perm(code):
-    async def dependency(tenant_id: UUID = Depends(require_tenant_permission(code))):
-        return tenant_id
+    async def dependency(tenant_id: UUID = Depends(require_tenant_permission(code))): return tenant_id
     return dependency
-
-read = perm('attendance.read')
-correct = perm('attendance.correct')
-approve = perm('attendance.approve')
-leave_manage = perm('attendance.leave.manage')
-sickbay_manage = perm('attendance.sickbay.manage')
+read = perm('attendance.read'); correct = perm('attendance.correct'); approve = perm('attendance.approve'); leave_manage = perm('attendance.leave.manage')
 
 @router.post('/corrections', response_model=AttendanceCorrectionResponse, status_code=status.HTTP_201_CREATED)
 async def create_correction(payload: AttendanceCorrectionCreate, principal=Depends(get_current_principal), tenant_id: UUID = Depends(correct)):
@@ -37,8 +29,6 @@ async def reject_correction(correction_id: UUID, principal=Depends(get_current_p
 
 @router.post('/exemptions', response_model=AttendanceExemptionResponse, status_code=status.HTTP_201_CREATED)
 async def create_attendance_exemption(payload: AttendanceExemptionCreate, principal=Depends(get_current_principal), tenant_id: UUID = Depends(leave_manage)):
-    if payload.exemption_type == 'sickbay':
-        await sickbay_manage(tenant_id)
     return await create_exemption(tenant_id, principal.user_id, payload.student_id, payload.exemption_type, payload.starts_at, payload.ends_at, payload.reason, payload.source_type, payload.source_id)
 
 @router.get('/exemptions', response_model=list[AttendanceExemptionResponse])
