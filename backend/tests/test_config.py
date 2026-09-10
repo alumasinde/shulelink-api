@@ -18,6 +18,9 @@ BASE = {
     "db_ssl_verify": True,
     "db_pool_min_size": 1,
     "db_pool_max_size": 2,
+    "db_tenant_pool_min_size": 1,
+    "db_tenant_pool_max_size": 2,
+    "db_max_dedicated_tenant_pools": 3,
     "db_pool_recycle_seconds": 1800,
     "db_connect_timeout_seconds": 5,
     "db_read_timeout_seconds": 10,
@@ -64,6 +67,16 @@ def test_development_configuration_is_explicit():
     assert settings.app_env == "development"
     assert settings.trusted_host_list == ["localhost", "127.0.0.1"]
     assert settings.cors_origin_list == ["http://localhost:5173"]
+
+
+def test_pool_capacity_is_bounded():
+    settings = make_settings()
+    assert settings.max_theoretical_db_connections == 8
+
+
+def test_tenant_pool_maximum_must_not_be_below_minimum():
+    with pytest.raises(ValidationError):
+        make_settings(db_tenant_pool_min_size=3, db_tenant_pool_max_size=2)
 
 
 def test_unknown_environment_is_rejected():
