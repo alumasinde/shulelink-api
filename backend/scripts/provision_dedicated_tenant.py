@@ -10,6 +10,7 @@ from app.core.crypto import encrypt_secret
 from app.core.database import get_central_pool, initialize_database
 
 EXCLUDED_TENANT_COPY_TABLES={"tenants","tenant_domains","tenant_users","tenant_membership_roles","tenant_role_permissions","tenant_access_sessions","auth_sessions","auth_login_throttles","password_reset_tokens","mfa_factors","mfa_challenges","mfa_recovery_codes","schema_migrations"}
+CENTRAL_ONLY_MIGRATIONS={"0021_curriculum_management.sql"}
 
 def quote(value:str)->str: return "'"+value.replace("'","''")+"'"
 def identifier(value:str)->str: return "`"+value.replace("`","``")+"`"
@@ -25,10 +26,15 @@ async def execute_migrations(conn):
         applied={r[0] for r in await cur.fetchall()}
         for path in sorted(directory.glob("*.sql")):
             version=int(path.name.split("_",1)[0])
-            if version in applied: continue
+            if version in applied or path.name in CENTRAL_ONLY_MIGRATIONS: continue
             sql=path.read_text(encoding="utf-8").strip()
             if sql:
                 await cur.execute(sql); await cur.execute("INSERT INTO schema_migrations (version,filename) VALUES (%s,%s)",(version,path.name))
+        # Record skipped central-only migrations so provisioning remains idempotent and
+        # future migration runs do not repeatedly inspect them.
+        for name in CENTRAL_ONLY_MIGRATIONS:
+            version=int(name.split("_",1)[0])
+            if version not in applied: await cur.execute("INSERT INTO schema_migrations (version,filename) VALUES (%s,%s)",(version,name))
 
 async def copy_rows(source,target,table,where,params):
     async with source.cursor() as src:
@@ -53,7 +59,7 @@ async def provision(tenant_id:str):
     admin=await aiomysql.connect(host=host,port=port,user=settings.db_provisioner_user,password=settings.db_provisioner_password,db=None,connect_timeout=settings.db_connect_timeout_seconds,autocommit=True)
     try:
         async with admin.cursor() as cur:
-            await cur.execute(f"CREATE DATABASE IF NOT EXISTS {identifier(db_name)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+            await cur.execute(f"CREATE DATABASE IF NOT EXISTS {identifier(db_name)} CHARACTER SET utf8mb4 COLLATE=utf8mb4_unicode_ci")
             await cur.execute(f"CREATE USER IF NOT EXISTS {quote(db_user)}@{quote(account_host)} IDENTIFIED BY {quote(db_password)}")
             await cur.execute(f"ALTER USER {quote(db_user)}@{quote(account_host)} IDENTIFIED BY {quote(db_password)}")
             await cur.execute(f"GRANT ALL PRIVILEGES ON {identifier(db_name)}.* TO {quote(db_user)}@{quote(account_host)}")
