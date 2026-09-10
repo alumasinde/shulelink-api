@@ -5,6 +5,8 @@ const resource = (path) => ({
   create: async (payload) => (await api.post(path, payload)).data,
 })
 
+export const academicsConfiguration = async () => (await api.get('/academics/configuration')).data
+
 export const teachers = {
   ...resource('/academics/teachers'),
   departmentSubjects: async (departmentId) => (await api.get(`/academics/departments/${departmentId}/subjects`)).data,
