@@ -17,7 +17,6 @@ class TeacherCreate(BaseModel):
     def unique_subjects(cls, v):
         if len({str(x) for x in v}) != len(v): raise ValueError('A subject can only be selected once')
         return v
-
 class TeacherUpdate(BaseModel):
     tenant_user_id: UUID | None = None; teacher_number: str | None = Field(default=None, min_length=1, max_length=80); first_name: str | None = Field(default=None, min_length=1, max_length=100); middle_name: str | None = Field(default=None, max_length=100); last_name: str | None = Field(default=None, min_length=1, max_length=100); gender: str | None = Field(default=None, min_length=1, max_length=30); phone: str | None = Field(default=None, max_length=40); email: str | None = Field(default=None, max_length=190); department_id: UUID | None = None; subject_ids: list[UUID] | None = Field(default=None); employment_type: str | None = Field(default=None, max_length=60); employment_date: date | None = None; status: str | None = Field(default=None, min_length=1, max_length=40); notes: str | None = None
     @field_validator('teacher_number','first_name','middle_name','last_name','phone','email','employment_type','notes','gender','status', mode='before')
@@ -29,8 +28,7 @@ class TeacherUpdate(BaseModel):
         if v is not None and len({str(x) for x in v}) != len(v): raise ValueError('A subject can only be selected once')
         return v
 class TeacherResponse(TeacherCreate): id: UUID; department_name: str | None = None; subjects: list[dict] = Field(default_factory=list)
-class BulkTeacherUpdate(BaseModel):
-    teacher_ids: list[UUID] = Field(min_length=1, max_length=500); department_id: UUID | None = None; employment_type: str | None = Field(default=None, max_length=60); status: str | None = Field(default=None, min_length=1, max_length=40); gender: str | None = Field(default=None, min_length=1, max_length=30)
+class BulkTeacherUpdate(BaseModel): teacher_ids: list[UUID] = Field(min_length=1, max_length=500); department_id: UUID | None = None; employment_type: str | None = Field(default=None, max_length=60); status: str | None = Field(default=None, min_length=1, max_length=40); gender: str | None = Field(default=None, min_length=1, max_length=30)
 class BulkTeacherSubjects(BaseModel):
     teacher_ids: list[UUID] = Field(min_length=1, max_length=500); subject_ids: list[UUID] = Field(min_length=0)
     @field_validator('teacher_ids','subject_ids')
@@ -54,9 +52,8 @@ class PeriodCreate(BaseModel):
 class PeriodUpdate(PeriodCreate): pass
 class PeriodResponse(PeriodCreate): id: UUID
 class TimetableCreate(BaseModel):
-    academic_year_id: UUID; academic_term_id: UUID; class_level_id: UUID; stream_id: UUID | None = None; subject_id: UUID; teacher_id: UUID; room_id: UUID | None = None; period_id: UUID; day_of_week: int = Field(ge=1, le=7); is_double: bool = False; notes: str | None = Field(default=None, max_length=500)
+    academic_year_id: UUID; academic_term_id: UUID; class_level_id: UUID; stream_id: UUID | None = None; subject_id: UUID; teacher_id: UUID; room_id: UUID | None = None; period_id: UUID; day_of_week: int = Field(ge=1, le=7); duration_periods: int = Field(default=1, ge=1, le=12); is_double: bool = False; notes: str | None = Field(default=None, max_length=500)
 class TimetableResponse(TimetableCreate): id: UUID; teacher_name: str; class_name: str; stream_name: str | None; subject_name: str; room_name: str | None; period_name: str
-class GenerateRequest(BaseModel):
-    academic_year_id: UUID; academic_term_id: UUID; class_level_id: UUID | None = None; stream_id: UUID | None = None; lessons_per_week: int | None = Field(default=None, ge=1, le=40); replace_existing: bool = False
+class GenerateRequest(BaseModel): academic_year_id: UUID; academic_term_id: UUID; class_level_id: UUID | None = None; stream_id: UUID | None = None; lessons_per_week: int | None = Field(default=None, ge=1, le=40); replace_existing: bool = False
 class GenerateResponse(BaseModel): created: int; skipped: int; conflicts: list[str]
 class EffectiveAcademicSettingsResponse(BaseModel): settings: dict[str, object]; reference_values: dict[str, list[dict]]; curriculum: dict[str, object]
