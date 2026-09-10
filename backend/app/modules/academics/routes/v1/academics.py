@@ -5,6 +5,7 @@ from app.modules.academics.schemas import *
 from app.modules.academics.service import *
 from app.modules.academics.bulk import bulk_update_teachers, bulk_replace_teacher_subjects
 from app.modules.academics.teacher_subjects import list_teacher_subjects, replace_teacher_subjects, list_department_subjects
+from app.modules.academics.configuration import effective_academic_configuration
 
 router=APIRouter(prefix='/academics',tags=['Academics'])
 
@@ -14,8 +15,14 @@ def perm(code):
 
 read=perm('academics.read'); manage=perm('academics.manage'); teacher_read=perm('teachers.read'); teacher_manage=perm('teachers.manage'); assign_read=perm('assignments.read'); assign_manage=perm('assignments.manage'); tt_read=perm('timetable.read'); tt_manage=perm('timetable.manage'); tt_generate=perm('timetable.generate')
 
+
+@router.get('/configuration', response_model=EffectiveAcademicSettingsResponse)
+async def configuration(tenant_id=Depends(read)):
+    return await effective_academic_configuration(tenant_id)
+
+
 @router.get('/teachers',response_model=list[TeacherResponse])
-async def teachers(tenant_id=Depends(teacher_read), status: str|None=Query(None,pattern='^(active|inactive|on_leave|terminated)$'), search: str|None=Query(None,max_length=100)):
+async def teachers(tenant_id=Depends(teacher_read), status: str|None=Query(None,max_length=40), search: str|None=Query(None,max_length=100)):
     return await list_teachers(tenant_id,status,search)
 
 @router.get('/teachers/{teacher_id}',response_model=TeacherResponse)
@@ -34,7 +41,6 @@ async def update_teacher_subjects(teacher_id:UUID,payload:dict,tenant_id=Depends
     if not isinstance(subject_ids,list): raise HTTPException(422,'subject_ids must be an array')
     try: ids=[UUID(x) for x in subject_ids]
     except (ValueError,TypeError): raise HTTPException(422,'subject_ids must contain valid UUIDs')
-    if not 1 <= len(ids) <= 2: raise HTTPException(422,'Select one or two subjects for the teacher')
     return await replace_teacher_subjects(tenant_id,teacher_id,ids)
 
 @router.post('/teachers/bulk-update')
@@ -55,7 +61,6 @@ async def create_teacher_route(payload:TeacherCreate,tenant_id=Depends(teacher_m
 async def update_teacher_route(teacher_id:UUID,payload:TeacherUpdate,tenant_id=Depends(teacher_manage)):
     p=payload.model_dump(exclude_unset=True); subject_ids=p.pop('subject_ids',None); await update_teacher(tenant_id,teacher_id,p)
     if subject_ids is not None: await replace_teacher_subjects(tenant_id,teacher_id,subject_ids)
-    elif 'department_id' in p: await replace_teacher_subjects(tenant_id,teacher_id,[])
     return await teacher(teacher_id,tenant_id)
 
 @router.get('/assignments',response_model=list[AssignmentResponse])
@@ -63,7 +68,7 @@ async def assignments(tenant_id=Depends(assign_read),academic_year_id:UUID|None=
 @router.post('/assignments',response_model=AssignmentResponse,status_code=status.HTTP_201_CREATED)
 async def create_assignment_route(payload:AssignmentCreate,tenant_id=Depends(assign_manage)):
     allowed={x['id'] for x in await list_teacher_subjects(tenant_id,payload.teacher_id)}
-    if str(payload.subject_id) not in allowed: raise HTTPException(400,'Teacher is not configured to teach this subject. Configure the teacher subjects first.')
+    if str(payload.subject_id) not in allowed: raise HTTPException(400,'Teacher is not configured to teach this subject. Configure teacher subject eligibility first.')
     return await create_assignment(tenant_id,payload.model_dump())
 @router.delete('/assignments/{assignment_id}',status_code=status.HTTP_204_NO_CONTENT)
 async def delete_assignment_route(assignment_id:UUID,tenant_id=Depends(assign_manage)): await delete_assignment(tenant_id,assignment_id)
