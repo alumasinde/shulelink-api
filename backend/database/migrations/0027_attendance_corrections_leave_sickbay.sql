@@ -4,17 +4,13 @@
 
 ALTER TABLE attendance_exemptions
     ADD COLUMN requested_by_user_id CHAR(36) NULL,
-    ADD COLUMN approved_by_user_id CHAR(36) NULL,
     ADD COLUMN resolved_at DATETIME NULL;
 
 CREATE INDEX ix_attendance_exemption_student_dates
-    ON attendance_exemptions (tenant_id, student_id, start_at, end_at, status);
+    ON attendance_exemptions (tenant_id, student_id, starts_at, ends_at, status);
 
 CREATE INDEX ix_attendance_exemption_workflow
-    ON attendance_exemptions (tenant_id, status, requested_at);
-
-ALTER TABLE attendance_corrections
-    ADD COLUMN approved_at DATETIME NULL;
+    ON attendance_exemptions (tenant_id, status, created_at);
 
 CREATE INDEX ix_attendance_correction_requester
     ON attendance_corrections (tenant_id, requested_by_user_id, requested_at);
