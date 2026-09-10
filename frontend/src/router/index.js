@@ -6,9 +6,11 @@ import ActivateAccountView from "../views/auth/ActivateAccountView.vue";
 import PlatformDashboard from "../views/platform/PlatformDashboard.vue";
 import TenantsView from "../views/platform/TenantsView.vue";
 import AcademicSettingsView from "../views/platform/AcademicSettingsView.vue";
+import PlatformCurriculumView from "../views/platform/PlatformCurriculumView.vue";
 import RoleDashboardView from "../views/tenant/RoleDashboardView.vue";
 import RolePortalView from "../views/tenant/RolePortalView.vue";
 import SchoolStructureView from "../views/tenant/SchoolStructureView.vue";
+import SchoolCurriculumView from "../views/tenant/SchoolCurriculumView.vue";
 import DataTransferView from "../views/tenant/DataTransferView.vue";
 import StudentsView from "../views/tenant/StudentsView.vue";
 import GuardiansView from "../views/tenant/GuardiansView.vue";
@@ -28,9 +30,11 @@ const router = createRouter({
     { path: "/platform", name: "platform-dashboard", component: PlatformDashboard, meta: { auth: true, platform: true } },
     { path: "/platform/tenants", name: "platform-tenants", component: TenantsView, meta: { auth: true, platform: true } },
     { path: "/platform/academic-settings", name: "platform-academic-settings", component: AcademicSettingsView, meta: { auth: true, platform: true } },
+    { path: "/platform/curriculum", name: "platform-curriculum", component: PlatformCurriculumView, meta: { auth: true, platform: true, permission: "curriculum.manage" } },
     { path: "/school", name: "tenant-dashboard", component: RoleDashboardView, meta: { auth: true, tenant: true } },
     { path: "/school/portal", name: "role-portal", component: RolePortalView, meta: { auth: true, tenant: true } },
     { path: "/school/structure", name: "school-structure", component: SchoolStructureView, meta: { auth: true, tenant: true } },
+    { path: "/school/curriculum", name: "school-curriculum", component: SchoolCurriculumView, meta: { auth: true, tenant: true, permission: "curriculum.read" } },
     { path: "/school/data-transfer", name: "school-data-transfer", component: DataTransferView, meta: { auth: true, tenant: true, permission: "school.structure.manage" } },
     { path: "/school/students", name: "students", component: StudentsView, meta: { auth: true, tenant: true } },
     { path: "/school/guardians", name: "guardians", component: GuardiansView, meta: { auth: true, tenant: true } },
@@ -44,11 +48,7 @@ const router = createRouter({
 
 let hydrated = false;
 let hydrationPromise = null;
-async function ensureHydrated(auth) {
-  if (hydrated) return;
-  hydrationPromise ||= auth.hydrate().finally(() => { hydrated = true; hydrationPromise = null; });
-  await hydrationPromise;
-}
+async function ensureHydrated(auth) { if (hydrated) return; hydrationPromise ||= auth.hydrate().finally(() => { hydrated = true; hydrationPromise = null; }); await hydrationPromise; }
 router.beforeEach(async (to) => {
   const auth = useAuthStore(); await ensureHydrated(auth);
   if (to.meta.guestOnly && auth.isAuthenticated) return isPlatformHost() ? "/platform" : portalPath(auth.user);
