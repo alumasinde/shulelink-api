@@ -3,9 +3,16 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from app.core.database import get_pool
+from app.core.database import get_central_pool, get_pool
 
 EXEMPTION_TYPES = {"leave", "sickbay", "suspension", "official_duty", "approved_absence"}
+MANAGE_PERMISSIONS = {
+    "leave": "attendance.leave.manage",
+    "sickbay": "attendance.sickbay.manage",
+    "suspension": "attendance.leave.manage",
+    "official_duty": "attendance.leave.manage",
+    "approved_absence": "attendance.leave.manage",
+}
 
 
 def sid(value):
@@ -14,6 +21,26 @@ def sid(value):
 
 def now_utc():
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+async def _require_exemption_permission(tenant_id, user_id, exemption_type):
+    permission = MANAGE_PERMISSIONS.get(exemption_type)
+    if not permission:
+        raise HTTPException(422, "Unsupported attendance exemption type")
+    pool = get_central_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT 1 FROM tenant_memberships m "
+                "JOIN tenant_membership_roles mr ON mr.membership_id=m.id "
+                "JOIN tenant_roles r ON r.id=mr.role_id "
+                "JOIN tenant_role_permissions rp ON rp.role_id=r.id "
+                "JOIN tenant_permissions p ON p.id=rp.permission_id "
+                "WHERE m.tenant_id=%s AND m.tenant_user_id=%s AND m.status='active' AND p.code=%s LIMIT 1",
+                (sid(tenant_id), sid(user_id), permission),
+            )
+            if not await cur.fetchone():
+                raise HTTPException(status_code=403, detail="Insufficient attendance exemption permission")
 
 
 async def _student_exists(cur, tenant_id, student_id, lock=False):
@@ -32,6 +59,7 @@ async def create_exemption(tenant_id, user_id, student_id, exemption_type, start
         raise HTTPException(422, "Unsupported attendance exemption type")
     if ends_at <= starts_at:
         raise HTTPException(422, "ends_at must be after starts_at")
+    await _require_exemption_permission(tenant_id, user_id, exemption_type)
     pool = get_pool()
     exemption_id = uuid4()
     async with pool.acquire() as conn:
@@ -115,12 +143,8 @@ async def resolve_exemption(tenant_id, user_id, exemption_id, approve):
                     raise HTTPException(409, f"Attendance exemption is already {row[3]}")
                 if sid(row[6]) == sid(user_id):
                     raise HTTPException(403, "The requester cannot approve their own exemption")
-
-                # Serialize all exemption state transitions for the same student.
-                # This closes the race where two administrators approve overlapping
-                # exemptions at the same time.
+                await _require_exemption_permission(tenant_id, user_id, row[2])
                 await _student_exists(cur, tenant_id, row[1], lock=True)
-
                 resolved = now_utc()
                 if approve:
                     await cur.execute(
@@ -163,6 +187,7 @@ async def cancel_exemption(tenant_id, user_id, exemption_id):
                     raise HTTPException(404, "Attendance exemption not found")
                 if row[0] not in ("pending", "approved"):
                     raise HTTPException(409, f"Attendance exemption is already {row[0]}")
+                await _require_exemption_permission(tenant_id, user_id, row[2])
                 await _student_exists(cur, tenant_id, row[1], lock=True)
                 resolved = now_utc()
                 await cur.execute(
@@ -176,16 +201,14 @@ async def cancel_exemption(tenant_id, user_id, exemption_id):
     return await get_exemption(tenant_id, exemption_id)
 
 
-async def find_active_exemption(cur, tenant_id, student_id, starts_at, ends_at=None):
-    # An exemption only applies automatically when it covers the entire
-    # attendance session window. This prevents a partial-day leave from
-    # incorrectly excusing a whole lesson/session.
+async def find_active_exemption(cur, tenant_id, student_id, starts_at, ends_at=None, lock=False):
     end = ends_at or starts_at
+    lock_sql = " FOR UPDATE" if lock else ""
     await cur.execute(
         "SELECT id,exemption_type,status,starts_at,ends_at,reason FROM attendance_exemptions "
         "WHERE tenant_id=%s AND student_id=%s AND status='approved' "
         "AND starts_at<=%s AND ends_at>=%s "
-        "ORDER BY CASE exemption_type WHEN 'sickbay' THEN 1 WHEN 'leave' THEN 2 WHEN 'suspension' THEN 3 WHEN 'official_duty' THEN 4 ELSE 5 END, starts_at DESC LIMIT 1",
+        "ORDER BY CASE exemption_type WHEN 'sickbay' THEN 1 WHEN 'leave' THEN 2 WHEN 'suspension' THEN 3 WHEN 'official_duty' THEN 4 ELSE 5 END, starts_at DESC LIMIT 1" + lock_sql,
         (sid(tenant_id), sid(student_id), starts_at, end),
     )
     return await cur.fetchone()
