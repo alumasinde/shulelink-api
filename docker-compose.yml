@@ -1,4 +1,25 @@
 services:
+  migration:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    command: ["python", "scripts/migrate.py"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - shulelink
+
   api:
     build:
       context: ./backend
@@ -10,6 +31,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migration:
+        condition: service_completed_successfully
     ports:
       - "${API_BIND_PORT}:8000"
     restart: unless-stopped
