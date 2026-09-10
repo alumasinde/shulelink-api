@@ -13,10 +13,10 @@ class AcademicSettingUpdate(BaseModel):
 
 
 @router.get('')
-async def list_settings(_: Principal = Depends(require_platform_permission('tenants.manage'))):
+async def list_settings(_: Principal = Depends(require_platform_permission('academic.settings.manage'))):
     return await list_platform_academic_settings()
 
 
 @router.patch('/{setting_id}')
-async def update_setting(setting_id: UUID, payload: AcademicSettingUpdate, principal: Principal = Depends(require_platform_permission('tenants.manage'))):
+async def update_setting(setting_id: UUID, payload: AcademicSettingUpdate, principal: Principal = Depends(require_platform_permission('academic.settings.manage'))):
     return await update_platform_academic_setting(setting_id, payload.model_dump(), principal.user_id)
