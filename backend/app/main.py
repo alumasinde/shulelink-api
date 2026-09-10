@@ -21,6 +21,9 @@ logger = logging.getLogger("shulelink")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Database schema migrations are intentionally not run by the API process.
+    # The deployment orchestrator runs the one-shot migration job first and only
+    # starts the API after that job completes successfully.
     await initialize_database()
     logger.info("database pool initialized", extra={"event": "database_pool_ready"})
     try:
