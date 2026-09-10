@@ -4,14 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-
-AttendanceSource = Literal[
-    "manual", "teacher_mobile", "rfid", "biometric", "nfc", "qr", "api", "import", "system"
-]
-AttendanceSessionType = Literal[
-    "daily", "lesson", "event", "morning_roll_call", "afternoon_roll_call", "dormitory_night_check"
-]
-
+AttendanceSource = Literal["manual", "teacher_mobile", "rfid", "biometric", "nfc", "qr", "api", "import", "system"]
+AttendanceSessionType = Literal["daily", "lesson", "event", "morning_roll_call", "afternoon_roll_call", "dormitory_night_check"]
 
 class AttendanceSessionCreate(BaseModel):
     academic_year_id: UUID | None = None
@@ -24,15 +18,12 @@ class AttendanceSessionCreate(BaseModel):
     scheduled_start_at: datetime | None = None
     scheduled_end_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=500)
-
     @field_validator("notes", mode="before")
     @classmethod
     def clean_notes(cls, value):
-        if value is None:
-            return None
+        if value is None: return None
         value = str(value).strip()
         return value or None
-
 
 class AttendanceSessionResponse(BaseModel):
     id: UUID
@@ -53,7 +44,6 @@ class AttendanceSessionResponse(BaseModel):
     roster_count: int = 0
     marked_count: int = 0
 
-
 class RosterStudent(BaseModel):
     student_id: UUID
     admission_number: str
@@ -70,31 +60,24 @@ class RosterStudent(BaseModel):
     marked_at: datetime | None = None
     remarks: str | None = None
 
-
 class AttendanceMarkItem(BaseModel):
     student_id: UUID
     status_code: str = Field(min_length=1, max_length=64)
     marked_at: datetime | None = None
     remarks: str | None = Field(default=None, max_length=500)
-
     @field_validator("status_code", mode="before")
     @classmethod
-    def clean_status(cls, value):
-        return str(value).strip().lower()
-
+    def clean_status(cls, value): return str(value).strip().lower()
 
 class AttendanceMarkRequest(BaseModel):
     items: list[AttendanceMarkItem] = Field(min_length=1, max_length=500)
     source: AttendanceSource = "manual"
-
     @field_validator("items")
     @classmethod
     def unique_students(cls, value):
         ids = [str(x.student_id) for x in value]
-        if len(ids) != len(set(ids)):
-            raise ValueError("A student may only appear once in a marking request")
+        if len(ids) != len(set(ids)): raise ValueError("A student may only appear once in a marking request")
         return value
-
 
 class AttendanceMarkResult(BaseModel):
     session_id: UUID
@@ -103,12 +86,13 @@ class AttendanceMarkResult(BaseModel):
     updated: int
     results: list[dict]
 
-
 class AttendanceSessionCloseResponse(BaseModel):
     id: UUID
     status: str
     closed_at: datetime | None
-
+    roster_count: int = 0
+    marked_count: int = 0
+    not_marked_count: int = 0
 
 class AttendanceStatusResponse(BaseModel):
     id: UUID
