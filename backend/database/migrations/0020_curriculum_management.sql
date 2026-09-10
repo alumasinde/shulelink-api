@@ -164,54 +164,27 @@ CREATE TABLE IF NOT EXISTS tenant_curriculum_profiles (
     CONSTRAINT fk_tcp_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE curriculum_frameworks ADD COLUMN platform_source_id CHAR(36) NULL;
-ALTER TABLE curriculum_versions ADD COLUMN platform_source_id CHAR(36) NULL;
-ALTER TABLE education_levels ADD COLUMN platform_source_id CHAR(36) NULL;
-ALTER TABLE grades ADD COLUMN platform_source_id CHAR(36) NULL;
-ALTER TABLE learning_areas ADD COLUMN platform_source_id CHAR(36) NULL;
-ALTER TABLE subjects ADD COLUMN platform_source_id CHAR(36) NULL;
-ALTER TABLE class_subjects ADD COLUMN platform_source_id CHAR(36) NULL;
-ALTER TABLE pathways ADD COLUMN platform_source_id CHAR(36) NULL;
-ALTER TABLE tracks ADD COLUMN platform_source_id CHAR(36) NULL;
-ALTER TABLE subject_combinations ADD COLUMN platform_source_id CHAR(36) NULL;
-ALTER TABLE subject_combination_subjects ADD COLUMN platform_source_id CHAR(36) NULL;
-
-CREATE TABLE IF NOT EXISTS teacher_subjects (
-    id CHAR(36) NOT NULL,
-    tenant_id CHAR(36) NOT NULL,
-    teacher_id CHAR(36) NOT NULL,
-    subject_id CHAR(36) NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_teacher_subject (tenant_id,teacher_id,subject_id),
-    KEY ix_teacher_subjects_teacher (tenant_id,teacher_id),
-    CONSTRAINT fk_teacher_subjects_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
-    CONSTRAINT fk_teacher_subjects_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE,
-    CONSTRAINT fk_teacher_subjects_subject FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 INSERT IGNORE INTO tenant_permissions (id,tenant_id,code,name)
 SELECT UUID(),t.id,p.code,p.name FROM tenants t CROSS JOIN (
     SELECT 'curriculum.read' code,'View curriculum configuration' name
     UNION ALL SELECT 'curriculum.manage','Manage school curriculum configuration'
 ) p;
+
 INSERT IGNORE INTO tenant_role_permissions (role_id,permission_id)
 SELECT r.id,p.id FROM tenant_roles r JOIN tenant_permissions p ON p.tenant_id=r.tenant_id
 WHERE r.code='school_admin' AND p.code IN ('curriculum.read','curriculum.manage');
+
 INSERT IGNORE INTO tenant_role_permissions (role_id,permission_id)
 SELECT r.id,p.id FROM tenant_roles r JOIN tenant_permissions p ON p.tenant_id=r.tenant_id
 WHERE r.code='registrar' AND p.code='curriculum.read';
 
--- Central platform permissions.
 INSERT IGNORE INTO platform_permissions (id,code,name)
 VALUES (UUID(),'curriculum.manage','Manage platform curriculum templates');
+
 INSERT IGNORE INTO platform_role_permissions (platform_role_id,platform_permission_id)
 SELECT r.id,p.id FROM platform_roles r CROSS JOIN platform_permissions p
 WHERE r.code='platform_admin' AND p.code='curriculum.manage';
 
--- Baseline Kenya CBC template. This is intentionally editable/versioned in the
--- platform catalog; it is not application logic and should be updated as official
--- curriculum releases change.
 INSERT IGNORE INTO platform_curriculum_templates
 (id,code,name,description,country_code,framework_code,version_no,status,is_default)
 VALUES

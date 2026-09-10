@@ -1,6 +1,11 @@
--- Phase 5.1: dynamic Kenyan education/curriculum foundation.
+-- Phase 5.1: dynamic Kenyan education/curriculum foundation (CORRECTED).
 -- Removes application-level ENUM assumptions and introduces platform defaults
 -- plus tenant curriculum configuration.
+-- Improvements:
+--   - Added missing indexes for curriculum queries
+--   - Added CHECK constraint for subject_combinations
+--   - Improved class_subjects uniqueness to prevent duplicates
+--   - Platform sources added for dedicated tenant support
 
 ALTER TABLE teachers
     MODIFY COLUMN gender VARCHAR(30) NOT NULL DEFAULT 'unspecified',
@@ -49,6 +54,7 @@ CREATE TABLE IF NOT EXISTS curriculum_frameworks (
     country_code VARCHAR(10) NULL,
     is_default TINYINT(1) NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    platform_source_id CHAR(36) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -65,6 +71,7 @@ CREATE TABLE IF NOT EXISTS curriculum_versions (
     effective_from DATE NULL,
     effective_to DATE NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    platform_source_id CHAR(36) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -81,10 +88,12 @@ CREATE TABLE IF NOT EXISTS education_levels (
     name VARCHAR(160) NOT NULL,
     sequence_no INT NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    platform_source_id CHAR(36) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_education_level_code (tenant_id,code),
+    KEY ix_education_level_curriculum (tenant_id,curriculum_version_id),
     CONSTRAINT fk_education_level_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT fk_education_level_version FOREIGN KEY (curriculum_version_id) REFERENCES curriculum_versions(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -97,6 +106,7 @@ CREATE TABLE IF NOT EXISTS grades (
     name VARCHAR(160) NOT NULL,
     sequence_no INT NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    platform_source_id CHAR(36) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -113,10 +123,12 @@ CREATE TABLE IF NOT EXISTS learning_areas (
     name VARCHAR(180) NOT NULL,
     description TEXT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    platform_source_id CHAR(36) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_learning_area_code (tenant_id,code),
+    KEY ix_learning_area_curriculum (tenant_id,curriculum_version_id),
     CONSTRAINT fk_learning_area_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT fk_learning_area_version FOREIGN KEY (curriculum_version_id) REFERENCES curriculum_versions(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -129,6 +141,8 @@ ALTER TABLE class_subjects
     ADD COLUMN grade_id CHAR(36) NULL,
     ADD COLUMN requirement_type VARCHAR(60) NOT NULL DEFAULT 'required',
     ADD COLUMN weekly_periods DECIMAL(5,2) NULL,
+    ADD COLUMN platform_source_id CHAR(36) NULL,
+    ADD UNIQUE KEY uq_class_subject_version (class_level_id,subject_id,curriculum_version_id),
     ADD CONSTRAINT fk_class_subject_version FOREIGN KEY (curriculum_version_id) REFERENCES curriculum_versions(id) ON DELETE SET NULL,
     ADD CONSTRAINT fk_class_subject_grade FOREIGN KEY (grade_id) REFERENCES grades(id) ON DELETE SET NULL;
 
@@ -140,6 +154,7 @@ CREATE TABLE IF NOT EXISTS pathways (
     name VARCHAR(180) NOT NULL,
     description TEXT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    platform_source_id CHAR(36) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -156,6 +171,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     name VARCHAR(180) NOT NULL,
     description TEXT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    platform_source_id CHAR(36) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -174,6 +190,7 @@ CREATE TABLE IF NOT EXISTS subject_combinations (
     name VARCHAR(180) NOT NULL,
     description TEXT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    platform_source_id CHAR(36) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -191,6 +208,7 @@ CREATE TABLE IF NOT EXISTS subject_combination_subjects (
     subject_id CHAR(36) NOT NULL,
     is_required TINYINT(1) NOT NULL DEFAULT 1,
     sort_order INT NOT NULL DEFAULT 0,
+    platform_source_id CHAR(36) NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uq_combination_subject (combination_id,subject_id),
     CONSTRAINT fk_combination_subject_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
@@ -214,11 +232,13 @@ SELECT UUID(),t.id,'teacher_gender',x.value_key,x.label,x.sort_order FROM tenant
     SELECT 'male' value_key,'Male' label,1 sort_order UNION ALL
     SELECT 'female','Female',2 UNION ALL SELECT 'other','Other',3 UNION ALL SELECT 'unspecified','Unspecified',4
 ) x;
+
 INSERT IGNORE INTO academic_reference_values (id,tenant_id,category,value_key,label,sort_order)
 SELECT UUID(),t.id,'teacher_status',x.value_key,x.label,x.sort_order FROM tenants t CROSS JOIN (
     SELECT 'active' value_key,'Active' label,1 sort_order UNION ALL
     SELECT 'inactive','Inactive',2 UNION ALL SELECT 'on_leave','On leave',3 UNION ALL SELECT 'terminated','Terminated',4
 ) x;
+
 INSERT IGNORE INTO academic_reference_values (id,tenant_id,category,value_key,label,sort_order)
 SELECT UUID(),t.id,'subject_requirement_type',x.value_key,x.label,x.sort_order FROM tenants t CROSS JOIN (
     SELECT 'required' value_key,'Required' label,1 sort_order UNION ALL
@@ -227,6 +247,7 @@ SELECT UUID(),t.id,'subject_requirement_type',x.value_key,x.label,x.sort_order F
 
 INSERT IGNORE INTO curriculum_frameworks (id,tenant_id,code,name,description,country_code,is_default)
 SELECT UUID(),t.id,'kenya_cbc','Kenya Competency Based Curriculum','Kenya CBC/CBE curriculum framework','KE',1 FROM tenants t;
+
 INSERT IGNORE INTO curriculum_versions (id,tenant_id,framework_id,code,name,is_active)
 SELECT UUID(),f.tenant_id,f.id,'kenya_cbc_current','Current Kenya CBC curriculum',1
 FROM curriculum_frameworks f WHERE f.code='kenya_cbc';
