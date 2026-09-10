@@ -14,6 +14,7 @@ from app.modules.portal.routes.v1.student import router as student_portal_router
 from app.modules.portal.routes.v1.parent import router as parent_portal_router
 from app.modules.academics.routes.v1.academics import router as academics_router
 from app.modules.curriculum.routes.v1.curriculum import platform_router as platform_curriculum_router, tenant_router as curriculum_router
+from app.modules.attendance.routes.v1.attendance import router as attendance_router
 
 router = APIRouter(prefix=settings.api_v1_prefix)
 router.include_router(health_router)
@@ -31,3 +32,4 @@ router.include_router(student_portal_router)
 router.include_router(parent_portal_router)
 router.include_router(academics_router)
 router.include_router(curriculum_router)
+router.include_router(attendance_router)
