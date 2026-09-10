@@ -120,7 +120,14 @@ async def fetch_session(tenant_id: UUID, session_id: UUID):
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            row = await get_session_for_update(cur, tenant_id, session_id)
+            await cur.execute(
+                "SELECT id,academic_year_id,academic_term_id,class_level_id,stream_id,timetable_entry_id,"
+                "session_type,session_date,scheduled_start_at,scheduled_end_at,actual_started_at,closed_at,status,"
+                "attendance_policy_id,opened_by_user_id,closed_by_user_id,notes "
+                "FROM attendance_sessions WHERE id=%s AND tenant_id=%s LIMIT 1",
+                (sid(session_id), sid(tenant_id)),
+            )
+            row = await cur.fetchone()
             if not row:
                 return None
             await cur.execute("SELECT COUNT(*) FROM student_enrollments WHERE tenant_id=%s AND class_level_id=%s AND (stream_id <=> %s) AND enrollment_date<=%s AND (exit_date IS NULL OR exit_date>=%s) AND status='active'", (sid(tenant_id), sid(row[3]), sid(row[4]), row[7], row[7]))
@@ -137,16 +144,20 @@ async def fetch_roster(tenant_id: UUID, session_id: UUID):
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            session = await get_session_for_update(cur, tenant_id, session_id)
+            await cur.execute(
+                "SELECT id,academic_year_id,academic_term_id,class_level_id,stream_id,timetable_entry_id,session_type,session_date "
+                "FROM attendance_sessions WHERE id=%s AND tenant_id=%s LIMIT 1",
+                (sid(session_id), sid(tenant_id)),
+            )
+            session = await cur.fetchone()
             if not session:
                 raise HTTPException(404, "Attendance session not found")
             await cur.execute(
                 "SELECT e.id,e.student_id,e.class_level_id,e.stream_id,s.admission_number,s.first_name,s.middle_name,s.last_name,"
-                "COALESCE(ar.status_code,'not_marked'),COALESCE(ar.status_name,'Not Marked'),ar.late_minutes,ar.marked_at,ar.remarks "
+                "COALESCE(ast.code,'not_marked'),COALESCE(ast.name,'Not Marked'),ar.late_minutes,ar.marked_at,ar.remarks "
                 "FROM student_enrollments e JOIN students s ON s.id=e.student_id AND s.tenant_id=e.tenant_id "
-                "LEFT JOIN (SELECT ar1.* FROM attendance_records ar1 JOIN attendance_statuses ast1 ON ast1.id=ar1.attendance_status_id "
-                "WHERE ar1.session_id=%s AND ar1.tenant_id=%s) ar ON ar.student_id=e.student_id "
-                "LEFT JOIN attendance_statuses ars ON ars.id=ar.attendance_status_id "
+                "LEFT JOIN attendance_records ar ON ar.student_id=e.student_id AND ar.session_id=%s AND ar.tenant_id=%s "
+                "LEFT JOIN attendance_statuses ast ON ast.id=ar.attendance_status_id AND ast.tenant_id=ar.tenant_id "
                 "WHERE e.tenant_id=%s AND e.class_level_id=%s AND (e.stream_id <=> %s) "
                 "AND e.enrollment_date<=%s AND (e.exit_date IS NULL OR e.exit_date>=%s) AND e.status='active' "
                 "ORDER BY s.last_name,s.first_name,s.admission_number",
